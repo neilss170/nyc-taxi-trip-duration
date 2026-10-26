@@ -278,6 +278,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
   <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
   <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></symbol>
   <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-tour" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2.1 6.3-6.3 2.1 2.1-6.3z"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-code" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></symbol>
@@ -288,6 +289,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
     <a class="brand" href="#overview"><span class="logo">NYC</span><span><b>NYC Taxi Trip Duration</b><small>LightGBM · runs in your browser</small></span></a>
     <div class="pill-info" id="pill-info"><span class="dot"></span><span>Loading trips…</span></div>
     <div class="actions">
+      <button class="icon-btn" id="tour-btn" type="button"><svg class="i"><use href="#i-tour"/></svg><span class="t">Tour</span></button>
       <a class="icon-btn" href="https://github.com/neilss170/nyc-taxi-trip-duration"><svg class="i"><use href="#i-code"/></svg><span class="t">Source</span></a>
       <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark theme"><svg class="i"><use href="#i-moon"/></svg></button>
     </div>
@@ -393,6 +395,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
   <a href="#overview">Overview</a><a href="#map">Map</a><a href="#predict">Predict</a><a href="#model">Model</a><a href="#quality">Quality</a>
 </nav>
 
+<script src="tour.js"></script>
 <script src="predict.js"></script>
 <script>
 const NS = "http://www.w3.org/2000/svg";
@@ -1007,7 +1010,82 @@ addEventListener("hashchange", () => { show(); scrollTo({ top: 0 }); });
   const info = document.querySelector("#pill-info span:last-child");
   info.textContent = D.overview ? `${compact.format(D.overview.rows_raw)} trips · Jan–Jun 2016 · model in browser` : "Data not found";
   show();
+  Tour.offer(TOUR, "tour-done-trip-duration");
 })();
+
+// ---- guided tour (site/tour.js runs it)
+const TOUR = [
+  {
+    "title": "Welcome",
+    "text": "This dashboard asks one question: how long will a New York taxi ride take? It covers the first half of 2016 and a model you can run yourself. The tour takes about a minute."
+  },
+  {
+    "page": "overview",
+    "target": "#ov-tiles",
+    "title": "The headline numbers",
+    "text": "How many trips were analysed, what a typical ride looks like, and how far off the model is on trips it never saw."
+  },
+  {
+    "page": "overview",
+    "target": "#daily",
+    "title": "Every day of the six months",
+    "text": "Trips per day. Hover anywhere on the line for that day's numbers. The deep dip in January is the blizzard, marked in red."
+  },
+  {
+    "page": "overview",
+    "target": "#heat",
+    "title": "When traffic crawls",
+    "text": "Each cell is one hour of the week, coloured by median speed. Weekday daytime is the slowest; the early-morning hours are the fastest."
+  },
+  {
+    "page": "map",
+    "target": "#map-card .map-wrap",
+    "exact": true,
+    "title": "A map drawn by the trips",
+    "text": "There is no basemap here. Every dot is a 75 m square where trips started, so Manhattan's avenues, the bridges and the airport roads appear on their own."
+  },
+  {
+    "page": "map",
+    "target": "#map-layer",
+    "title": "Switch the layer",
+    "text": "Show where trips start, where they end, or how fast the trips leaving each spot were."
+  },
+  {
+    "page": "predict",
+    "target": "#pick-map",
+    "title": "Pick a trip",
+    "text": "Click the map to set the pickup (A), then the drop-off (B). Or choose landmarks such as Times Square and JFK from the lists."
+  },
+  {
+    "page": "predict",
+    "target": "#result",
+    "title": "The model runs in your browser",
+    "text": "Change the date, time or passengers and the prediction updates instantly. Next to it: what similar past trips actually took, and how far off the model typically is for trips this long."
+  },
+  {
+    "page": "model",
+    "target": "#model-bars",
+    "title": "Tested on a month it never saw",
+    "text": "Models are trained on January to May and scored on June. Lower RMSLE is better; the table underneath has the other scores."
+  },
+  {
+    "page": "model",
+    "target": "#fi",
+    "title": "What the model relies on",
+    "text": "Distance measured along Manhattan's tilted street grid matters far more than straight-line distance."
+  },
+  {
+    "page": "quality",
+    "target": "#dq-rules",
+    "title": "Nothing silently dropped",
+    "text": "Every removed trip is counted under the rule it broke, from meter errors lasting days to trips that never moved."
+  },
+  {
+    "target": "#theme",
+    "title": "That's the tour",
+    "text": "Switch between light and dark here, open the source code next to it, and restart this tour any time with the Tour button."
+  }
+];
 </script>
 </body>
 </html>
