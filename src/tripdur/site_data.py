@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 
 import numpy as np
@@ -10,8 +11,8 @@ import pandas as pd
 from tripdur import config, data
 from tripdur.features import KM_PER_DEG_LAT, KM_PER_DEG_LON, LAT0, LON0, N_CLUSTERS, FeatureBuilder, haversine_km, project
 
-# map window: Manhattan, Brooklyn, Queens and both NYC airports; cells of 150 m
-MAP = {"lat_min": 40.60, "lat_max": 40.88, "lon_min": -74.05, "lon_max": -73.74, "cell_km": 0.15}
+# map window: Manhattan, Brooklyn, Queens and both NYC airports; cells of 75 m
+MAP = {"lat_min": 40.60, "lat_max": 40.88, "lon_min": -74.05, "lon_max": -73.74, "cell_km": 0.075}
 HOUR_BANDS = [0, 6, 10, 16, 20, 24]
 BAND_NAMES = ["Night (0-6)", "Morning (6-10)", "Midday (10-16)", "Evening (16-20)", "Late (20-24)"]
 
@@ -70,10 +71,15 @@ def run() -> dict:
     pick, pick_cell, pick_ok = density(df.pickup_latitude, df.pickup_longitude)
     drop, _, _ = density(df.dropoff_latitude, df.dropoff_longitude)
     speed_sum = np.bincount(pick_cell[pick_ok], weights=np.asarray(kmh)[pick_ok], minlength=w * h)
-    speed = np.where(pick >= 20, speed_sum / np.maximum(pick, 1), -1)
+    speed = np.where(pick >= 10, speed_sum / np.maximum(pick, 1), -1)
+    # binary layers keep the fine grid small: counts as little-endian uint16, speed as uint8 half-km/h steps (255 = no data)
+    b64 = lambda a: base64.b64encode(a.tobytes()).decode("ascii")
+    assert pick.max() < 65536 and drop.max() < 65536
+    speed_u8 = np.where(speed < 0, 255, np.clip(np.round(speed * 2), 0, 254)).astype("<u1")
     _write("grid", {**MAP, "width": w, "height": h, "x0": x0, "y0": y0, "lat0": LAT0, "lon0": LON0,
                     "km_per_deg_lat": KM_PER_DEG_LAT, "km_per_deg_lon": KM_PER_DEG_LON,
-                    "pickups": pick.tolist(), "dropoffs": drop.tolist(), "pickup_kmh": np.round(speed, 1).tolist()})
+                    "encoding": "base64: pickups/dropoffs uint16 LE, pickup_kmh uint8 = km/h * 2 (255 = fewer than 10 trips)",
+                    "pickups": b64(pick.astype("<u2")), "dropoffs": b64(drop.astype("<u2")), "pickup_kmh": b64(speed_u8)})
 
     # "similar past trips" for the predictor: same pickup cluster, dropoff cluster and time-of-day band
     model = json.loads((config.SITE / "model" / "model.json").read_text())
