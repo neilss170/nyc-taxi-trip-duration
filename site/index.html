@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Taxi Trip Duration</title>
+<meta name="description" content="How long does a New York taxi ride take? 721K cleaned 2016 trips, a LightGBM model tested on unseen June trips, and a predictor that runs in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // apply a saved theme before first paint
+  try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #ebe2d5; --solid: #f4efe6;
+  --glass: rgba(255,255,255,0.46); --glass-strong: rgba(255,255,255,0.78); --edge: rgba(255,255,255,0.7);
+  --shadow: rgba(70,48,20,0.12); --hi: rgba(255,255,255,0.7);
+  --ink: #1b1915; --ink-2: #4a463f; --muted: #6f6a61;
+  --grid: rgba(27,25,21,0.09); --axis: rgba(27,25,21,0.24);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --critical: #d03b3b; --good: #006300;
+  --band: rgba(208,59,59,0.12);
+  /* sequential ramp, validated against the light glass surface */
+  --seq-0: #7eaeea; --seq-1: #0d366b; --nodata: rgba(27,25,21,0.13);
+  --chip: rgba(237,161,0,0.24); --streets: rgba(27,25,21,0.03);
+  --blob-1: rgba(240,170,40,0.55); --blob-2: rgba(214,110,60,0.36); --blob-3: rgba(60,120,200,0.26); --blob-4: rgba(120,84,48,0.30);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #120f0c; --solid: #1d1a17;
+    --glass: rgba(30,27,24,0.52); --glass-strong: rgba(36,32,28,0.88); --edge: rgba(255,255,255,0.09);
+    --shadow: rgba(0,0,0,0.35); --hi: rgba(255,255,255,0.06);
+    --ink: #f2eee8; --ink-2: #c9c2b6; --muted: #9a9286;
+    --grid: rgba(255,255,255,0.07); --axis: rgba(255,255,255,0.2);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --critical: #e66767; --good: #0ca30c;
+    --band: rgba(230,103,103,0.16);
+    --seq-0: #2a5590; --seq-1: #a6cbf4; --nodata: rgba(255,255,255,0.1);
+    --chip: rgba(201,133,0,0.26); --streets: rgba(255,255,255,0.03);
+    --blob-1: rgba(200,130,20,0.30); --blob-2: rgba(160,70,30,0.26); --blob-3: rgba(40,80,150,0.26); --blob-4: rgba(90,60,30,0.32);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #120f0c; --solid: #1d1a17;
+  --glass: rgba(30,27,24,0.52); --glass-strong: rgba(36,32,28,0.88); --edge: rgba(255,255,255,0.09);
+  --shadow: rgba(0,0,0,0.35); --hi: rgba(255,255,255,0.06);
+  --ink: #f2eee8; --ink-2: #c9c2b6; --muted: #9a9286;
+  --grid: rgba(255,255,255,0.07); --axis: rgba(255,255,255,0.2);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --critical: #e66767; --good: #0ca30c;
+  --band: rgba(230,103,103,0.16);
+  --seq-0: #2a5590; --seq-1: #a6cbf4; --nodata: rgba(255,255,255,0.1);
+  --chip: rgba(201,133,0,0.26); --streets: rgba(255,255,255,0.03);
+  --blob-1: rgba(200,130,20,0.30); --blob-2: rgba(160,70,30,0.26); --blob-3: rgba(40,80,150,0.26); --blob-4: rgba(90,60,30,0.32);
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: transparent; color: var(--ink); min-height: 100vh;
+  font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+
+/* warm blurred backdrop the glass sits on: colour blobs plus a faint street grid at Manhattan's 29° */
+.backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  background:
+    radial-gradient(60vw 50vw at 6% 0%, var(--blob-1), transparent 62%),
+    radial-gradient(50vw 45vw at 100% 8%, var(--blob-2), transparent 62%),
+    radial-gradient(55vw 50vw at 88% 100%, var(--blob-3), transparent 62%),
+    radial-gradient(50vw 50vw at 0% 100%, var(--blob-4), transparent 62%),
+    var(--bg); }
+.backdrop::after { content: ""; position: absolute; inset: -50%; transform: rotate(29deg);
+  background:
+    repeating-linear-gradient(0deg, var(--streets) 0 2px, transparent 2px 46px),
+    repeating-linear-gradient(90deg, var(--streets) 0 3px, transparent 3px 180px); }
+
+.glass { background: var(--glass); border: 1px solid var(--edge);
+  -webkit-backdrop-filter: blur(22px) saturate(140%); backdrop-filter: blur(22px) saturate(140%);
+  box-shadow: 0 10px 32px var(--shadow), inset 0 1px 0 var(--hi); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--glass-strong); }
+}
+
+/* top bar */
+.topbar { position: sticky; top: 12px; z-index: 20; max-width: 1240px; margin: 12px auto 0; display: flex;
+  align-items: center; gap: 12px; padding: 8px 10px 8px 12px; border-radius: 999px; }
+.wrap-top { padding: 0 16px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; text-decoration: none; }
+.brand .logo { width: 34px; height: 34px; border-radius: 50%; background: var(--s4); color: #1b1915; display: grid;
+  place-items: center; font-weight: 700; font-size: 11px; letter-spacing: 0.02em; flex: none; }
+.brand b { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.brand small { display: block; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+.pill-info { margin: 0 auto; padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--ink-2);
+  background: var(--glass); border: 1px solid var(--edge); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.pill-info .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+.actions { display: flex; gap: 6px; margin-left: auto; }
+.icon-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; min-width: 36px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--edge); background: var(--glass); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; text-decoration: none; justify-content: center; }
+.icon-btn:hover { background: var(--glass-strong); }
+.icon-btn:focus-visible, .rail a:focus-visible, .dock a:focus-visible, .seg button:focus-visible,
+.field select:focus-visible, .field input:focus-visible, .chip-btn:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+@media (max-width: 720px) { .pill-info { display: none; } .icon-btn .t { display: none; } }
+
+/* floating left rail */
+.rail { position: fixed; left: 16px; top: 50%; transform: translateY(-50%); z-index: 20; display: flex; flex-direction: column;
+  gap: 6px; padding: 8px; border-radius: 999px; }
+.rail a { position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-2); }
+.rail a:hover { background: var(--glass-strong); color: var(--ink); }
+.rail a[aria-current="page"] { background: var(--ink); color: var(--solid); }
+.rail a::after { content: attr(data-label); position: absolute; left: 52px; top: 50%; transform: translate(-4px, -50%); opacity: 0;
+  pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 999px;
+  background: var(--glass-strong); border: 1px solid var(--edge); color: var(--ink); transition: opacity 0.15s, transform 0.15s; }
+.rail a:hover::after, .rail a:focus-visible::after { opacity: 1; transform: translate(0, -50%); }
+@media (max-width: 1100px) { .rail { display: none; } }
+
+/* bottom dock */
+.dock { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20; display: flex; gap: 4px; padding: 6px;
+  border-radius: 999px; max-width: calc(100vw - 32px); overflow-x: auto; scrollbar-width: none; }
+.dock::-webkit-scrollbar { display: none; }
+.dock a { padding: 8px 16px; border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; }
+.dock a:hover { color: var(--ink); background: var(--glass-strong); }
+.dock a[aria-current="page"] { background: var(--ink); color: var(--solid); }
+@media (max-width: 520px) { .dock a { padding: 8px 10px; font-size: 12px; } }
+
+main { max-width: 1240px; margin: 0 auto; padding: 28px 16px 120px; }
+@media (min-width: 1101px) { main { padding-left: 88px; padding-right: 88px; } }
+.page[hidden] { display: none; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 8px 0 20px; }
+.page-head h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
+.page-head p { margin: 0; color: var(--ink-2); max-width: 720px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips span { font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--glass); border: 1px solid var(--edge); color: var(--ink-2); }
+
+.card { border-radius: 22px; padding: 18px; position: relative; transition: transform 0.25s ease, box-shadow 0.25s ease; min-width: 0; }
+.card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px var(--shadow), inset 0 1px 0 var(--hi); z-index: 3; }
+.card.still:hover { transform: none; }
+.card:focus-within { z-index: 3; }
+.card h3 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+.card .sub { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; }
+.grid { display: grid; gap: 16px; margin-bottom: 16px; }
+.g-2 { grid-template-columns: 1fr 1fr; }
+.g-main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+@media (max-width: 900px) { .g-2, .g-main { grid-template-columns: 1fr; } }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.tile { border-radius: 22px; padding: 16px 18px; transition: transform 0.25s ease, box-shadow 0.25s ease; }
+.tile:hover { transform: translateY(-3px); box-shadow: 0 16px 40px var(--shadow), inset 0 1px 0 var(--hi); }
+.tile .top { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 13px; font-weight: 500; }
+.tile .chip { width: 30px; height: 30px; border-radius: 50%; background: var(--chip); display: grid; place-items: center; color: var(--ink); }
+.tile .chip svg.i { width: 16px; height: 16px; }
+.tile .v { font-size: 28px; font-weight: 650; letter-spacing: -0.02em; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.tile .l { color: var(--ink-2); font-size: 12.5px; }
+.tile .badge { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--good); }
+
+.chart { position: relative; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; font-family: inherit; }
+svg .lbl { fill: var(--ink-2); font-size: 12px; }
+svg .val { fill: var(--ink); font-size: 12px; }
+svg .big { fill: var(--ink); font-size: 22px; font-weight: 650; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+.tip { position: absolute; pointer-events: none; background: var(--glass-strong); border: 1px solid var(--edge);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-radius: 12px; padding: 8px 10px; font-size: 12px; box-shadow: 0 8px 24px var(--shadow);
+  opacity: 0; transition: opacity 0.1s; z-index: 5; min-width: 140px; }
+.tip .h { color: var(--ink-2); margin-bottom: 4px; }
+.tip .r { display: flex; align-items: center; gap: 6px; }
+.tip .r b { color: var(--ink); font-weight: 650; }
+.tip .r i { width: 10px; height: 2px; display: inline-block; }
+.tip .r span { color: var(--ink-2); }
+
+.donut { display: grid; gap: 18px; }
+.donut svg { max-width: 200px; margin: 0 auto; }
+.donut ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.donut li .row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.donut li .row i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.donut li .row span { color: var(--ink-2); flex: 1; }
+.donut li .row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.donut li .row em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; width: 46px; text-align: right; }
+.track { height: 4px; border-radius: 2px; background: var(--grid); margin-top: 5px; overflow: hidden; }
+.track div { height: 100%; border-radius: 2px; }
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; }
+td.n, th.n { text-align: right; }
+.good { color: var(--good); font-weight: 600; }
+details { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+details summary { cursor: pointer; }
+.note { font-size: 13px; color: var(--ink-2); margin: 10px 0 0; }
+.scroll { overflow-x: auto; }
+code { font-size: 12.5px; background: var(--grid); padding: 1px 5px; border-radius: 5px; }
+.findings { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; display: grid; gap: 8px; }
+.findings b { color: var(--ink); font-weight: 600; }
+footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: center; }
+
+.seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; margin: 0; }
+.seg button { font: inherit; font-size: 13px; font-weight: 500; padding: 6px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); cursor: pointer; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--solid); }
+
+/* density map */
+.map-card { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
+@media (max-width: 820px) { .map-card { grid-template-columns: 1fr; } }
+.map-wrap { position: relative; max-width: 620px; margin: 0 auto; width: 100%; }
+.map-wrap canvas { display: block; width: 100%; height: auto; border-radius: 14px; }
+.map-wrap svg.overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ramp { height: 10px; border-radius: 5px; margin: 6px 0 4px; }
+.ramp-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.map-side h3 { margin-top: 0; }
+
+/* predictor */
+.predict { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .predict { grid-template-columns: 1fr; } }
+.pick-map { cursor: crosshair; touch-action: manipulation; }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-bottom: 14px; }
+.field { display: grid; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink-2); min-width: 0; }
+.field select, .field input { font: inherit; font-size: 14px; color: var(--ink); background: var(--glass-strong); border: 1px solid var(--edge);
+  border-radius: 12px; padding: 8px 10px; min-width: 0; width: 100%; }
+.step-hint { font-size: 13px; color: var(--ink-2); margin: 0 0 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.step-hint b { color: var(--ink); }
+.chip-btn { font: inherit; font-size: 12px; font-weight: 500; border: 1px solid var(--edge); background: var(--glass); color: var(--ink);
+  border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.chip-btn:hover { background: var(--glass-strong); }
+.result .eta { font-size: 56px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.result .eta small { font-size: 20px; font-weight: 600; color: var(--ink-2); margin-left: 6px; letter-spacing: 0; }
+.result .arrive { color: var(--ink-2); margin: 8px 0 16px; }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fact { border-radius: 16px; padding: 10px 12px; background: var(--glass); border: 1px solid var(--edge); }
+.fact b { display: block; font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fact span { font-size: 12px; color: var(--ink-2); }
+.dot-a { fill: var(--s3); } .dot-b { fill: var(--s2); }
+.route { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 5; fill: none; opacity: 0.7; }
+.loading { color: var(--ink-2); font-size: 14px; padding: 20px 0; }
+
+/* entrance motion: blocks rise in turn, marks grow from their baseline, numbers count up (see countUp) */
+:root { --ease: cubic-bezier(0.22, 1, 0.36, 1); }
+.enter { animation: rise 0.7s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 60ms); }
+.grow-x { transform-box: fill-box; transform-origin: left center; animation: growX 1s var(--ease) backwards; }
+.grow-y { transform-box: fill-box; transform-origin: center bottom; animation: growY 1s var(--ease) backwards; }
+.draw { stroke-dasharray: 1; animation: draw 1.6s var(--ease) backwards; }
+.sweep { stroke-dasharray: 1; animation: draw 1.3s var(--ease) backwards; animation-delay: 0.15s; }
+.fade-in { animation: fadeIn 0.9s ease backwards; animation-delay: 0.5s; }
+.pop { transform-box: fill-box; transform-origin: center; animation: pop 0.6s var(--ease) backwards; }
+.map-wrap canvas.fade-in { animation-delay: 0.1s; }
+@keyframes growX { from { transform: scaleX(0); } }
+@keyframes growY { from { transform: scaleY(0); } }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.5); } }
+/* redraws after a theme switch or resize skip the entrance */
+.no-anim .page * { animation: none !important; }
+.pill-info .dot { animation: live 2.2s ease-out infinite; }
+@keyframes live { 0% { box-shadow: 0 0 0 0 rgba(12,163,12,0.5); } 70%, 100% { box-shadow: 0 0 0 7px rgba(12,163,12,0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .enter, .grow-x, .grow-y, .draw, .sweep, .fade-in, .pop, .pill-info .dot { animation: none !important; }
+  .card, .tile, .rail a::after { transition: none; }
+  .card:hover, .tile:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></symbol>
+  <symbol id="i-predict" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></symbol>
+  <symbol id="i-model" viewBox="0 0 24 24"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
+  <symbol id="i-quality" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></symbol>
+</svg>
+
+<div class="wrap-top">
+  <header class="topbar glass">
+    <a class="brand" href="#overview"><span class="logo">NYC</span><span><b>NYC Taxi Trip Duration</b><small>LightGBM · runs in your browser</small></span></a>
+    <div class="pill-info" id="pill-info"><span class="dot"></span><span>Loading trips…</span></div>
+    <div class="actions">
+      <a class="icon-btn" href="https://github.com/neilss170/nyc-taxi-trip-duration"><svg class="i"><use href="#i-code"/></svg><span class="t">Source</span></a>
+      <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark theme"><svg class="i"><use href="#i-moon"/></svg></button>
+    </div>
+  </header>
+</div>
+
+<nav class="rail glass" aria-label="Pages">
+  <a href="#overview" data-label="Overview"><svg class="i"><use href="#i-overview"/></svg></a>
+  <a href="#map" data-label="Trip map"><svg class="i"><use href="#i-map"/></svg></a>
+  <a href="#predict" data-label="Predict a trip"><svg class="i"><use href="#i-predict"/></svg></a>
+  <a href="#model" data-label="Model"><svg class="i"><use href="#i-model"/></svg></a>
+  <a href="#quality" data-label="Data quality"><svg class="i"><use href="#i-quality"/></svg></a>
+</nav>
+
+<main>
+  <section class="page" id="overview" aria-labelledby="h-overview">
+    <div class="page-head">
+      <div><h1 id="h-overview">How long does a NYC taxi ride take?</h1>
+        <p id="ov-sub">Yellow-cab trips from the first half of 2016 (Kaggle's NYC Taxi Trip Duration data), cleaned, explored and modelled. Every number here is read from the pipeline's own output.</p></div>
+      <div class="chips"><span id="ov-range">2016</span><span>LightGBM · time-based test</span></div>
+    </div>
+    <div class="tiles" id="ov-tiles"></div>
+    <div class="grid g-main">
+      <div class="card glass"><h3>Trips per day</h3><p class="sub" id="daily-sub">Cleaned trips by pickup day.</p><div class="chart" id="daily"></div></div>
+      <div class="card glass"><h3>How long trips take</h3><p class="sub">Share of cleaned trips by duration.</p><div class="chart" id="lengths"></div></div>
+    </div>
+    <div class="grid g-2">
+      <div class="card glass"><h3>Traffic by hour and weekday</h3><p class="sub" id="heat-sub"></p><div class="chart" id="heat"></div></div>
+      <div class="card glass"><h3>Duration distribution</h3><p class="sub">Trips in two-minute bins; the last bar holds everything over an hour.</p><div class="chart" id="hist"></div></div>
+    </div>
+  </section>
+
+  <section class="page" id="map" aria-labelledby="h-map" hidden>
+    <div class="page-head">
+      <div><h1 id="h-map">Where the trips are</h1>
+        <p>Every cleaned trip as a point in a 150 m grid. No basemap is drawn: the streets, bridges and airports appear from the trips alone.</p></div>
+      <div class="seg glass" id="map-layer" role="group" aria-label="Map layer"></div>
+    </div>
+    <div class="card glass still map-card" id="map-card"></div>
+  </section>
+
+  <section class="page" id="predict" aria-labelledby="h-predict" hidden>
+    <div class="page-head">
+      <div><h1 id="h-predict">Predict a trip</h1>
+        <p>The trained LightGBM model runs in your browser: no server, the same features and trees as the Python pipeline (tests check they agree).</p></div>
+      <div class="chips"><span>Trained Jan–May 2016</span><span>Tested on June 2016</span></div>
+    </div>
+    <div class="predict">
+      <div class="card glass still"><p class="step-hint" id="pick-hint"></p><div class="map-wrap pick-map" id="pick-map"></div></div>
+      <div class="card glass still">
+        <div class="form">
+          <label class="field">From<select id="f-from"></select></label>
+          <label class="field">To<select id="f-to"></select></label>
+          <label class="field">Date<input type="date" id="f-date" min="2016-01-01" max="2016-06-30" value="2016-06-15"></label>
+          <label class="field">Pickup time<input type="time" id="f-time" value="17:30"></label>
+          <label class="field">Passengers<select id="f-pax"></select></label>
+          <label class="field">Vendor<select id="f-vendor"><option value="1">Vendor 1</option><option value="2" selected>Vendor 2</option></select></label>
+        </div>
+        <div class="result" id="result"><div class="loading">Loading the model (about 4 MB, once)…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="model" aria-labelledby="h-model" hidden>
+    <div class="page-head">
+      <div><h1 id="h-model">Model</h1><p id="model-sub"></p></div>
+      <div class="chips"><span>log1p(seconds) target</span><span>RMSLE, lower is better</span></div>
+    </div>
+    <div class="tiles" id="model-tiles"></div>
+    <div class="grid g-main">
+      <div class="card glass"><h3>Models on the same June test set</h3><p class="sub">Test RMSLE; every model sees the same 25 features.</p>
+        <div class="chart" id="model-bars"></div><div class="scroll"><table id="model-table"></table></div></div>
+      <div class="card glass"><h3>Other ways to score it</h3><ul class="findings" id="model-notes"></ul></div>
+    </div>
+    <div class="grid g-2">
+      <div class="card glass"><h3>Error by trip length</h3><p class="sub">Mean absolute error in minutes, June test trips.</p><div class="chart" id="err-band"></div></div>
+      <div class="card glass"><h3>Error by pickup hour</h3><p class="sub">Mean absolute error in minutes, June test trips.</p><div class="chart" id="err-hour"></div></div>
+    </div>
+    <div class="card glass"><h3>What the model relies on</h3><p class="sub" id="fi-sub"></p><div class="chart" id="fi"></div></div>
+  </section>
+
+  <section class="page" id="quality" aria-labelledby="h-quality" hidden>
+    <div class="page-head">
+      <div><h1 id="h-quality">Data quality</h1><p id="dq-sub"></p></div>
+    </div>
+    <div class="tiles" id="dq-tiles"></div>
+    <div class="grid g-2">
+      <div class="card glass"><h3>Rows removed, by rule</h3><p class="sub">A row can break more than one rule.</p><div class="chart" id="dq-rules"></div></div>
+      <div class="card glass"><h3>Passengers per trip</h3><p class="sub">Cleaned trips.</p><div class="chart" id="dq-pax"></div></div>
+    </div>
+    <div class="card glass"><h3>Why these rules</h3>
+      <ul class="findings">
+        <li><b>Meter errors, not trips.</b> Some raw trips last days (one runs for over 22 days). Trips over 3 hours or under 1 minute are dropped from training and the clean test.</li>
+        <li><b>Impossible geometry.</b> Pickups or drop-offs outside New York City, trips that never move, and straight-line speeds over 100 km/h are dropped.</li>
+        <li><b>Scored both ways.</b> The Model page also scores every June trip, dirty rows included, so the cleaning cannot flatter the result.</li>
+      </ul></div>
+  </section>
+
+  <footer>Data: NYC Taxi &amp; Limousine Commission trip records via Kaggle's NYC Taxi Trip Duration competition. Built with pandas, LightGBM and plain SVG/Canvas.</footer>
+</main>
+
+<nav class="dock glass" aria-label="Pages">
+  <a href="#overview">Overview</a><a href="#map">Map</a><a href="#predict">Predict</a><a href="#model">Model</a><a href="#quality">Quality</a>
+</nav>
+
+<script src="predict.js"></script>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const fmt = new Intl.NumberFormat("en-US");
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let uid = 0;
+
+async function load(path) {
+  try { const r = await fetch(path); if (r.ok) return await r.json(); } catch (e) {}
+  return null;
+}
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent, x, y, s, attrs = {}) { const t = el("text", { x, y, ...attrs }, parent); t.textContent = s; return t; }
+function div(cls, parent, text) { const d = document.createElement("div"); if (cls) d.className = cls; if (text != null) d.textContent = text; if (parent) parent.appendChild(d); return d; }
+function fresh(id) { const n = document.getElementById(id); n.replaceChildren(); return n; }
+function contentWidth(n) {
+  const cs = getComputedStyle(n);
+  return n.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+}
+function niceMax(v) { const p = 10 ** Math.floor(Math.log10(v)); return Math.ceil(v / p) * p; }
+function icon(name) { const s = el("svg", { class: "i", "aria-hidden": "true" }); el("use", { href: "#i-" + name }, s); return s; }
+function tile(parent, ic, title, value, label, badge) {
+  const t = div("tile glass", parent), top = div("top", t), chip = div("chip", top);
+  chip.appendChild(icon(ic)); top.appendChild(document.createTextNode(title));
+  div("v", t, value); div("l", t, label);
+  if (badge) div("badge", t, badge);
+}
+function li(parent, bold, rest) {
+  const n = document.createElement("li"), b = document.createElement("b"); b.textContent = bold;
+  n.appendChild(b); n.appendChild(document.createTextNode(" " + rest)); parent.appendChild(n);
+}
+
+function tooltip(card) {
+  const t = div("tip", card);
+  return {
+    show(x, y, head, rows) {
+      t.replaceChildren(); div("h", t, head);
+      for (const r of rows) {
+        const row = div("r", t);
+        if (r.color) { const i = document.createElement("i"); i.style.background = r.color; row.appendChild(i); }
+        const b = document.createElement("b"); b.textContent = r.value; row.appendChild(b);
+        const s = document.createElement("span"); s.textContent = r.name; row.appendChild(s);
+      }
+      const w = card.clientWidth, tw = t.offsetWidth;
+      t.style.left = Math.min(Math.max(x + 14, 0), w - tw - 4) + "px"; t.style.top = (y + 10) + "px"; t.style.opacity = 1;
+    },
+    hide() { t.style.opacity = 0; },
+  };
+}
+function hover(target, card, tip, show, focusAt) {
+  target.addEventListener("pointermove", (e) => { const cr = card.getBoundingClientRect(); show(e.clientX - cr.left, e.clientY - cr.top); });
+  target.addEventListener("focus", () => show(...focusAt()));
+  target.addEventListener("pointerleave", () => tip.hide()); target.addEventListener("blur", () => tip.hide());
+}
+
+function legend(parent, items) {
+  const l = div("legend", parent);
+  for (const it of items) {
+    const s = document.createElement("span"); const i = document.createElement("i");
+    i.style.background = it.color; s.appendChild(i);
+    s.appendChild(document.createTextNode(it.name)); l.appendChild(s);
+  }
+}
+
+// ---- line / area chart with crosshair; series: [{name, color, values:[y], area?}], x: [Date]
+function lineChart(card, { x, series, bands = [], height = 260, yFmt = compact.format, endLabels = false }) {
+  if (series.length > 1) legend(card, series);
+  const W = Math.max(contentWidth(card), 300), H = height, m = { l: 44, r: endLabels ? 104 : 12, t: 10, b: 24 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, card);
+  const defs = el("defs", {}, svg);
+  const xs = x.map((d) => d.getTime()), x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const ymax = niceMax(Math.max(...series.flatMap((s) => s.values.filter((v) => v != null))));
+  const X = (t) => m.l + ((t - x0) / (x1 - x0)) * (W - m.l - m.r);
+  const Y = (v) => H - m.b - (v / ymax) * (H - m.t - m.b);
+  for (let i = 0; i <= 4; i++) {
+    const v = (ymax / 4) * i, y = Y(v);
+    el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: i ? css("--grid") : css("--axis"), "stroke-width": 1 }, svg);
+    txt(svg, m.l - 6, y + 4, yFmt(v), { "text-anchor": "end" });
+  }
+  for (const b of bands) {
+    const a = X(b.from.getTime()) - 2, z = X(b.to.getTime()) + 2;
+    el("rect", { x: a, y: m.t, width: Math.max(z - a, 3), height: H - m.t - m.b, fill: css("--band") }, svg);
+    txt(svg, z + 6, m.t + 12, b.label, { class: "lbl" });
+  }
+  x.forEach((d, i) => {
+    if (d.getUTCDate() === 1) txt(svg, X(xs[i]), H - 6, d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }), { "text-anchor": "middle" });
+  });
+  for (const s of series) {
+    let d = "", pen = false;
+    s.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? "L" : "M") + X(xs[i]).toFixed(1) + "," + Y(v).toFixed(1); pen = true; });
+    if (s.area) {
+      const id = "fill" + ++uid, g = el("linearGradient", { id, x1: 0, x2: 0, y1: 0, y2: 1 }, defs);
+      el("stop", { offset: "0%", "stop-color": s.color, "stop-opacity": 0.32 }, g);
+      el("stop", { offset: "100%", "stop-color": s.color, "stop-opacity": 0 }, g);
+      el("path", { d: `${d}L${X(x1).toFixed(1)},${Y(0)}L${X(x0).toFixed(1)},${Y(0)}Z`, fill: `url(#${id})`, class: "fade-in" }, svg);
+    }
+    el("path", { d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round",
+      pathLength: 1, class: "draw", style: `animation-delay:${series.indexOf(s) * 150}ms` }, svg);
+  }
+  const cross = el("line", { y1: m.t, y2: H - m.b, stroke: css("--axis"), "stroke-width": 1, opacity: 0 }, svg);
+  const tip = tooltip(card);
+  const hit = el("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: "transparent", tabindex: 0 }, svg);
+  const at = (i, px, py) => {
+    cross.setAttribute("x1", X(xs[i])); cross.setAttribute("x2", X(xs[i])); cross.setAttribute("opacity", 1);
+    tip.show(px, py, x[i].toLocaleDateString("en-US", { weekday: "short", year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }),
+      series.map((s) => ({ name: s.name, color: s.color, value: s.values[i] == null ? "–" : (s.fmt || fmt.format)(s.values[i]) })));
+  };
+  hit.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect(), sx = ((e.clientX - r.left) / r.width) * W;
+    const t = x0 + ((sx - m.l) / (W - m.l - m.r)) * (x1 - x0);
+    let i = 0, best = Infinity; xs.forEach((v, j) => { const dd = Math.abs(v - t); if (dd < best) { best = dd; i = j; } });
+    const cr = card.getBoundingClientRect(); at(i, e.clientX - cr.left, e.clientY - cr.top);
+  });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("opacity", 0); tip.hide(); });
+  hit.addEventListener("focus", () => at(xs.length - 1, 40, 20));
+  hit.addEventListener("blur", () => { cross.setAttribute("opacity", 0); tip.hide(); });
+}
+
+// ---- horizontal bars, single series
+function hbars(card, items, { color = css("--s1"), valueFmt = fmt.format, labelW = 200 } = {}) {
+  const W = Math.max(contentWidth(card), 280);
+  labelW = Math.min(labelW, Math.round(W * 0.42));
+  const short = (t) => (t.length * 6.2 > labelW - 8 ? t.slice(0, Math.floor((labelW - 8) / 6.2) - 1) + "…" : t);
+  const bar = 16, gap = 12, H = items.length * (bar + gap);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, card);
+  const max = Math.max(...items.map((d) => d.value)), right = 64;
+  const tip = tooltip(card);
+  items.forEach((d, i) => {
+    const y = i * (bar + gap), w = Math.max(((W - labelW - right) * d.value) / max, 4);
+    txt(svg, labelW - 8, y + bar / 2 + 4, short(d.label), { class: "lbl", "text-anchor": "end" });
+    const g = el("g", { class: "mark-hover", tabindex: 0 }, svg);
+    el("rect", { x: labelW, y, width: W - labelW - right, height: bar, rx: 4, fill: css("--grid") }, g);
+    el("path", { d: `M${labelW},${y}h${w - 4}a4,4 0 0 1 4,4v${bar - 8}a4,4 0 0 1 -4,4h${-(w - 4)}z`, fill: d.color || color, class: "grow-x", style: `animation-delay:${i * 50}ms` }, g);
+    el("rect", { x: labelW, y: y - gap / 2, width: W - labelW, height: bar + gap, fill: "transparent" }, g);
+    txt(svg, W - right + 8, y + bar / 2 + 4, valueFmt(d.value), { class: "val" });
+    hover(g, card, tip, (px, py) => tip.show(px, py, d.label, [{ value: valueFmt(d.value), name: d.note || "" }]), () => [labelW, y]);
+  });
+}
+
+// ---- vertical bars over categories, single series
+function vbars(card, items, { color = css("--s1"), valueFmt = fmt.format, height = 230, yFmt = compact.format } = {}) {
+  const W = Math.max(contentWidth(card), 280), H = height, m = { l: 44, r: 6, t: 10, b: 24 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, card);
+  const ymax = niceMax(Math.max(...items.map((d) => d.value))), n = items.length, cw = (W - m.l - m.r) / n;
+  const Y = (v) => H - m.b - (v / ymax) * (H - m.t - m.b);
+  for (let i = 0; i <= 4; i++) {
+    const v = (ymax / 4) * i, y = Y(v);
+    el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: i ? css("--grid") : css("--axis"), "stroke-width": 1 }, svg);
+    txt(svg, m.l - 6, y + 4, yFmt(v), { "text-anchor": "end" });
+  }
+  const every = Math.ceil((n * 30) / (W - m.l - m.r)), tip = tooltip(card);
+  items.forEach((d, i) => {
+    const w = Math.max(cw - 2 * Math.max(1, cw * 0.15), 2), x = m.l + i * cw + (cw - w) / 2, y = Y(d.value), base = Y(0);
+    const r = Math.min(4, w / 2, base - y);
+    const g = el("g", { class: "mark-hover", tabindex: 0 }, svg);
+    el("path", { d: `M${x},${base}V${y + r}a${r},${r} 0 0 1 ${r},${-r}h${w - 2 * r}a${r},${r} 0 0 1 ${r},${r}V${base}z`, fill: color, class: "grow-y", style: `animation-delay:${i * 30}ms` }, g);
+    el("rect", { x: m.l + i * cw, y: m.t, width: cw, height: H - m.t - m.b, fill: "transparent" }, g);
+    if (i % every === 0) txt(svg, x + w / 2, H - 6, d.short || d.label, { "text-anchor": "middle" });
+    hover(g, card, tip, (px, py) => tip.show(px, py, d.label, [{ value: valueFmt(d.value), name: d.note || "" }]), () => [x, y]);
+  });
+}
+
+// ---- donut with a legend that carries the numbers (labels, not color alone)
+function donut(card, items, { center, centerLabel }) {
+  const box = div("donut", card), S = 200, R = 94, r = 68, c = S / 2;
+  const svg = el("svg", { viewBox: `0 0 ${S} ${S}`, role: "img" }, box);
+  const total = items.reduce((a, d) => a + d.value, 0), tip = tooltip(card);
+  const pt = (a, rad) => [c + rad * Math.sin(a), c - rad * Math.cos(a)];
+  // the ring is revealed clockwise by a stroke sweeping round a mask
+  const maskId = "sweep" + ++uid, mask = el("mask", { id: maskId }, el("defs", {}, svg));
+  el("circle", { cx: c, cy: c, r: (R + r) / 2, fill: "none", stroke: "#fff", "stroke-width": R - r + 6, pathLength: 1, class: "sweep", transform: `rotate(-90 ${c} ${c})` }, mask);
+  const ring = el("g", { mask: `url(#${maskId})` }, svg);
+  let a0 = 0;
+  for (const d of items) {
+    const sweep = (d.value / total) * 2 * Math.PI, pad = Math.min(0.012, sweep / 4);
+    const s = a0 + pad, e = a0 + sweep - pad, large = e - s > Math.PI ? 1 : 0;
+    const [x1, y1] = pt(s, R), [x2, y2] = pt(e, R), [x3, y3] = pt(e, r), [x4, y4] = pt(s, r);
+    const g = el("g", { class: "mark-hover", tabindex: 0 }, ring);
+    el("path", { d: `M${x1},${y1}A${R},${R} 0 ${large} 1 ${x2},${y2}L${x3},${y3}A${r},${r} 0 ${large} 0 ${x4},${y4}Z`, fill: d.color }, g);
+    const mid = a0 + sweep / 2;
+    hover(g, card, tip, (px, py) => tip.show(px, py, d.label, [{ value: fmt.format(d.value), name: "trips" }, { value: ((100 * d.value) / total).toFixed(1) + "%", name: "share" }]),
+      () => { const k = svg.clientWidth / S, [mx, my] = pt(mid, R); return [mx * k, my * k]; });
+    a0 += sweep;
+  }
+  txt(svg, c, c + 2, center, { class: "big", "text-anchor": "middle" });
+  txt(svg, c, c + 22, centerLabel, { "text-anchor": "middle" });
+  const ul = document.createElement("ul"); box.appendChild(ul);
+  for (const d of items) {
+    const item = document.createElement("li"), row = div("row", item), i = document.createElement("i");
+    i.style.background = d.color; row.appendChild(i);
+    const s = document.createElement("span"); s.textContent = d.label; row.appendChild(s);
+    const b = document.createElement("b"); b.textContent = compact.format(d.value); row.appendChild(b);
+    const em = document.createElement("em"); em.textContent = ((100 * d.value) / total).toFixed(1) + "%"; row.appendChild(em);
+    const track = div("track", item), fill = div("grow-x", track); fill.style.animationDelay = "300ms";
+    fill.style.width = (100 * d.value) / total + "%"; fill.style.background = d.color;
+    ul.appendChild(item);
+  }
+}
+
+function rgb(h) { return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+function mix(a, b, t) {
+  const [x, y] = [rgb(a), rgb(b)];
+  return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+
+function heatmap(card, rows, value, valueLabel) {
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const W = Math.max(contentWidth(card), 280), l = 36, t = 4, cw = (W - l) / 24, ch = W < 400 ? 24 : 30, H = t + 7 * ch + 20;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, card);
+  const vals = rows.map((r) => r[value]), lo = Math.min(...vals), hi = Math.max(...vals), tip = tooltip(card);
+  const c0 = css("--seq-0"), c1 = css("--seq-1");
+  days.forEach((name, r) => {
+    txt(svg, l - 6, t + r * ch + ch / 2 + 4, name, { "text-anchor": "end", class: "lbl" });
+    rows.filter((x) => x.weekday === r).forEach((x) => {
+      const c = el("rect", { x: l + x.hour * cw + 1, y: t + r * ch + 1, width: cw - 2, height: ch - 2, rx: 3,
+        fill: mix(c0, c1, (x[value] - lo) / (hi - lo)), class: "mark-hover pop", style: `animation-delay:${x.hour * 22 + r * 30}ms`, tabindex: 0 }, svg);
+      hover(c, card, tip, (px, py) => tip.show(px, py, `${name} ${String(x.hour).padStart(2, "0")}:00`,
+        [{ value: x[value].toFixed(1) + " " + valueLabel, name: "median" }, { value: x.median_minutes.toFixed(1) + " min", name: "median trip" },
+         { value: fmt.format(x.trips), name: "trips" }]), () => [l + x.hour * cw, t + r * ch]);
+    });
+  });
+  for (const h of W < 400 ? [0, 12, 23] : [0, 6, 12, 18, 23]) txt(svg, l + h * cw + cw / 2, H - 4, String(h).padStart(2, "0"), { "text-anchor": "middle" });
+}
+
+// ---- density map: one 150 m cell per pixel, drawn on a canvas; north is up
+function drawDensity(canvas, grid, layer, { dim = false } = {}) {
+  const w = grid.width, h = grid.height, vals = grid[layer], speed = layer === "pickup_kmh";
+  const off = document.createElement("canvas"); off.width = w; off.height = h;
+  const img = off.getContext("2d").createImageData(w, h);
+  const pos = vals.filter((v) => (speed ? v >= 0 : v > 0)).map((v) => (speed ? v : Math.log10(v))).sort((a, b) => a - b);
+  const lo = pos[Math.floor(pos.length * 0.02)], hi = pos[Math.ceil(pos.length * 0.995) - 1];
+  const c0 = rgb(css("--seq-0")), c1 = rgb(css("--seq-1"));
+  for (let cy = 0; cy < h; cy++) for (let cx = 0; cx < w; cx++) {
+    const v = vals[cy * w + cx];
+    if (speed ? v < 0 : v <= 0) continue;
+    const t = Math.min(Math.max(((speed ? v : Math.log10(v)) - lo) / (hi - lo), 0), 1);
+    const o = ((h - 1 - cy) * w + cx) * 4;
+    for (let k = 0; k < 3; k++) img.data[o + k] = Math.round(c0[k] + (c1[k] - c0[k]) * t);
+    img.data[o + 3] = Math.round(255 * (dim ? 0.18 + 0.5 * t : speed ? 0.85 : 0.35 + 0.65 * t));
+  }
+  off.getContext("2d").putImageData(img, 0, 0);
+  // drawn 3x: a blurred copy underneath gives the street network a soft glow, the sharp copy on top keeps detail
+  const k = 3, ctx = canvas.getContext("2d");
+  canvas.width = w * k; canvas.height = h * k;
+  ctx.imageSmoothingEnabled = true;
+  ctx.filter = "blur(3px)"; ctx.drawImage(off, 0, 0, w * k, h * k);
+  ctx.filter = "none"; ctx.globalAlpha = 0.9; ctx.drawImage(off, 0, 0, w * k, h * k); ctx.globalAlpha = 1;
+  return { lo, hi };
+}
+function gridToLatLon(grid, fx, fy) {
+  const x = grid.x0 + fx * grid.width * grid.cell_km, y = grid.y0 + (1 - fy) * grid.height * grid.cell_km;
+  return [y / grid.km_per_deg_lat + grid.lat0, x / grid.km_per_deg_lon + grid.lon0];
+}
+function latLonToGrid(grid, lat, lon) {
+  const x = (lon - grid.lon0) * grid.km_per_deg_lon, y = (lat - grid.lat0) * grid.km_per_deg_lat;
+  return [(x - grid.x0) / grid.cell_km, grid.height - (y - grid.y0) / grid.cell_km];
+}
+
+const LAYERS = {
+  pickups: { label: "Pickups", note: "Trips starting in each 150 m cell (log scale).", fmt: (v) => compact.format(v), log: true },
+  dropoffs: { label: "Drop-offs", note: "Trips ending in each 150 m cell (log scale).", fmt: (v) => compact.format(v), log: true },
+  pickup_kmh: { label: "Speed", note: "Average straight-line speed of trips starting here (cells with 20+ trips).", fmt: (v) => v.toFixed(1) + " km/h" },
+};
+let mapLayer = "pickups";
+
+function densityPage(card, seg, grid) {
+  const wrap = div("map-wrap", card), side = div("map-side", card);
+  const canvas = document.createElement("canvas"); canvas.className = "fade-in"; wrap.appendChild(canvas);
+  canvas.setAttribute("role", "img"); canvas.setAttribute("aria-label", "Density map of taxi trips in New York City");
+  const tip = tooltip(card);
+  function draw() {
+    const L = LAYERS[mapLayer], { lo, hi } = drawDensity(canvas, grid, mapLayer);
+    side.replaceChildren();
+    const h = document.createElement("h3"); h.textContent = L.label; side.appendChild(h);
+    const p = document.createElement("p"); p.className = "note"; p.textContent = L.note; side.appendChild(p);
+    const ramp = div("ramp", side); ramp.style.background = `linear-gradient(90deg, ${css("--seq-0")}, ${css("--seq-1")})`;
+    const labels = div("ramp-labels", side);
+    div(null, labels, "≤" + L.fmt(L.log ? 10 ** lo : lo)); div(null, labels, L.fmt(L.log ? 10 ** hi : hi) + "+");
+    const n = document.createElement("p"); n.className = "note";
+    n.textContent = "The bright strips are Manhattan's avenues, the bridges and the two airports. Hover for a cell's numbers.";
+    side.appendChild(n);
+  }
+  canvas.addEventListener("pointermove", (e) => {
+    const r = canvas.getBoundingClientRect(), cx = Math.floor(((e.clientX - r.left) / r.width) * grid.width);
+    const cy = grid.height - 1 - Math.floor(((e.clientY - r.top) / r.height) * grid.height), i = cy * grid.width + cx;
+    if (cx < 0 || cy < 0 || cx >= grid.width || cy >= grid.height) return tip.hide();
+    const [lat, lon] = gridToLatLon(grid, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    const cr = card.getBoundingClientRect();
+    tip.show(e.clientX - cr.left, e.clientY - cr.top, `${lat.toFixed(4)}, ${lon.toFixed(4)}`, [
+      { value: fmt.format(grid.pickups[i]), name: "pickups" }, { value: fmt.format(grid.dropoffs[i]), name: "drop-offs" },
+      { value: grid.pickup_kmh[i] >= 0 ? grid.pickup_kmh[i].toFixed(1) + " km/h" : "–", name: "avg speed" }]);
+  });
+  canvas.addEventListener("pointerleave", () => tip.hide());
+  for (const [key, L] of Object.entries(LAYERS)) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = L.label;
+    b.setAttribute("aria-pressed", String(key === mapLayer));
+    b.addEventListener("click", () => { mapLayer = key; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); draw(); });
+    seg.appendChild(b);
+  }
+  draw();
+}
+
+function table(tbl, head, rows, numeric = []) {
+  tbl.replaceChildren();
+  const tr = tbl.createTHead().insertRow();
+  head.forEach((h, i) => { const th = document.createElement("th"); th.textContent = h; if (numeric.includes(i)) th.className = "n"; tr.appendChild(th); });
+  const body = tbl.createTBody();
+  for (const r of rows) {
+    const row = body.insertRow();
+    r.forEach((v, i) => { const td = row.insertCell(); if (v && typeof v === "object") { td.textContent = v.text; td.className = v.cls || ""; } else td.textContent = v; if (numeric.includes(i)) td.classList.add("n"); });
+  }
+}
+function tableView(card, head, rows, numeric) {
+  const d = document.createElement("details"); const s = document.createElement("summary"); s.textContent = "Table view";
+  d.appendChild(s); const t = document.createElement("table"); const w = div("scroll", d); w.appendChild(t); card.appendChild(d); table(t, head, rows, numeric);
+}
+
+// ---- numbers count up from zero; the last frame restores the exact rendered text
+const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countUp(nodes) {
+  if (reduced()) return;
+  const items = [];
+  for (const n of nodes) {
+    const m = /^([^\d]*)(\d[\d,]*(?:\.\d+)?)(.*)$/s.exec(n.textContent);
+    if (!m) continue;
+    const dec = (m[2].split(".")[1] || "").length;
+    const f = new Intl.NumberFormat("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: m[2].includes(",") });
+    items.push({ n, final: n.textContent, target: parseFloat(m[2].replace(/,/g, "")), put: (v) => (n.textContent = m[1] + f.format(v) + m[3]) });
+  }
+  const t0 = performance.now(), dur = 1600;
+  (function frame(now) {
+    const t = Math.min((now - t0) / dur, 1), e = 1 - Math.pow(1 - t, 3);
+    for (const it of items) if (t === 1) it.n.textContent = it.final; else it.put(it.target * e);
+    if (t < 1) requestAnimationFrame(frame);
+  })(t0);
+}
+
+const RULES = { duration_under_1_min: "Under 1 minute", duration_over_3_hours: "Over 3 hours", outside_nyc: "Outside NYC",
+  no_movement: "Never moved (<10 m)", speed_over_100_kmh: "Faster than 100 km/h", passenger_count_invalid: "0 or 7+ passengers" };
+const FEATURE_NAMES = { grid_km: "Distance along the street grid", te_pair: "Typical duration, this pickup→drop-off area pair",
+  hour: "Pickup time of day", street_km: "Distance across the avenues", weekday: "Day of week", haversine_km: "Straight-line distance",
+  dropoff_avenue_km: "Drop-off position (avenue axis)", pickup_street_km: "Pickup position (street axis)", avenue_km: "Distance up/down the avenues",
+  day_of_year: "Day of year", te_dropoff: "Typical duration, drop-off area", te_pickup: "Typical duration, pickup area",
+  pickup_avenue_km: "Pickup position (avenue axis)", dropoff_street_km: "Drop-off position (street axis)", bearing_deg: "Direction of travel",
+  vendor_id: "Vendor", passenger_count: "Passengers", is_holiday: "Public holiday", is_weekend: "Weekend",
+  pickup_airport: "Pickup at an airport", dropoff_airport: "Drop-off at an airport",
+  pickup_latitude: "Pickup latitude", pickup_longitude: "Pickup longitude", dropoff_latitude: "Drop-off latitude", dropoff_longitude: "Drop-off longitude" };
+
+let D = {};
+const PAGES = {
+  overview() {
+    const { overview: o, metrics: m, daily, hist, hw } = D;
+    if (o) {
+      document.getElementById("ov-range").textContent = `${o.first_day} → ${o.last_day}`;
+      const t = fresh("ov-tiles");
+      tile(t, "db", "Trips analysed", compact.format(o.rows_raw), `${compact.format(o.rows_clean)} after cleaning`);
+      tile(t, "predict", "Median trip", o.median_minutes.toFixed(1) + " min", `median straight-line distance ${o.median_km} km`);
+      tile(t, "gauge", "Median speed", o.median_kmh.toFixed(1) + " km/h", "straight-line, door to door");
+      if (m) {
+        const best = m.models[0];
+        tile(t, "target", "Model error (RMSLE)", best.rmsle.toFixed(3), "unseen June 2016 trips", `${m.best_rmsle_reduction_vs_baseline_pct}% below baseline`);
+        tile(t, "check", "Typical miss", best.median_abs_error_minutes.toFixed(2) + " min", "median absolute error, June");
+      }
+    }
+    if (daily) {
+      const card = fresh("daily"), low = daily.reduce((a, d) => (d.trips < a.trips ? d : a));
+      document.getElementById("daily-sub").textContent =
+        `Cleaned trips by pickup day. The quietest day, ${new Date(low.date).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })} ` +
+        `(${fmt.format(low.trips)} trips), is the day of the January 2016 blizzard.`;
+      lineChart(card, {
+        x: daily.map((d) => new Date(d.date)), height: 280, yFmt: fmt.format,
+        series: [{ name: "Trips", color: css("--s1"), values: daily.map((d) => d.trips), area: true }],
+        bands: [{ from: new Date(low.date), to: new Date(low.date), label: "blizzard" }],
+      });
+      tableView(card, ["Date", "Trips", "Median minutes"], daily.map((d) => [d.date, fmt.format(d.trips), d.median_minutes]), [1, 2]);
+    }
+    if (hist) {
+      const groups = [["Under 5 min", 0, 5], ["5–10 min", 5, 10], ["10–20 min", 10, 20], ["20–40 min", 20, 40], ["40 min +", 40, 1e9]];
+      const colors = ["--s1", "--s2", "--s3", "--s4", "--s5"];
+      const items = groups.map(([label, a, b], i) => ({ label, color: css(colors[i]),
+        value: hist.filter((h) => h.from >= a && h.from < b).reduce((s, h) => s + h.trips, 0) }));
+      const total = items.reduce((a, d) => a + d.value, 0);
+      donut(fresh("lengths"), items, { center: compact.format(total), centerLabel: "trips" });
+      vbars(fresh("hist"), hist.map((h) => ({ label: h.to == null ? `${h.from}+ min` : `${h.from}–${h.to} min`, short: h.to == null ? "60+" : String(h.from),
+        value: h.trips, note: "trips" })), { color: css("--s1") });
+    }
+    if (hw) {
+      document.getElementById("heat-sub").textContent = `Median straight-line speed of trips by pickup hour. ${isDark() ? "Brighter" : "Darker"} = faster; the weekday daytime cells are the slowest traffic.`;
+      heatmap(fresh("heat"), hw, "median_kmh", "km/h");
+    }
+  },
+
+  map() {
+    if (D.grid) densityPage(fresh("map-card"), fresh("map-layer"), D.grid);
+  },
+
+  predict() { predictPage(); },
+
+  model() {
+    const m = D.metrics;
+    if (!m) return;
+    const best = m.models[0], base = m.models.find((r) => r.model.startsWith("Baseline"));
+    document.getElementById("model-sub").textContent =
+      `${m.split[0].toUpperCase() + m.split.slice(1)}. ${fmt.format(m.train_rows)} training trips, ${fmt.format(m.test_rows)} June test trips the model never saw, ${m.features} features.`;
+    const t = fresh("model-tiles");
+    tile(t, "target", "Test RMSLE", best.rmsle.toFixed(3), best.model, `${m.best_rmsle_reduction_vs_baseline_pct}% below baseline (${base.rmsle.toFixed(3)})`);
+    tile(t, "check", "Median miss", best.median_abs_error_minutes.toFixed(2) + " min", "half of June trips are closer than this");
+    tile(t, "predict", "Mean miss", best.mae_minutes.toFixed(2) + " min", "pulled up by a few long trips");
+    tile(t, "model", "R² (log scale)", best.r2_log.toFixed(3), "share of variation explained");
+    const names = (r) => (r.model === best.model ? { text: r.model, cls: "good" } : r.model);
+    hbars(fresh("model-bars"), m.models.map((r) => ({ label: r.model, value: r.rmsle, color: r.model === best.model ? css("--s1") : css("--axis"), note: "test RMSLE" })),
+      { valueFmt: (v) => v.toFixed(3), labelW: 190 });
+    table(document.getElementById("model-table"), ["Model", "RMSLE", "Median miss (min)", "MAE (min)", "Fit (s)"],
+      m.models.map((r) => [names(r), r.rmsle.toFixed(4), r.median_abs_error_minutes.toFixed(2), r.mae_minutes.toFixed(2), r.fit_seconds]), [1, 2, 3, 4]);
+    const notes = fresh("model-notes");
+    li(notes, `${m.best_on_all_june_rows_including_dirty.rmsle.toFixed(3)} on every June trip.`,
+      "Scoring all June rows, including the meter errors and impossible trips that cleaning removes, as the Kaggle metric would.");
+    li(notes, `${m.best_on_random_80_20_split.rmsle.toFixed(3)} on a random 80/20 split.`,
+      "The same pipeline scored the easier way, with test trips drawn from the same months as training.");
+    if (m.notebook_best) li(notes, `${m.notebook_best.rmsle.toFixed(3)} was the notebook model.`,
+      `The earlier ${m.notebook_best.model} in notebooks/model.ipynb, also on a random 80/20 split (its own cleaning, so not a perfectly equal comparison).`);
+    li(notes, `${m.lightgbm_rounds} boosting rounds,`, "chosen by early stopping on the last two weeks of May, never on June.");
+    hbars(fresh("err-band"), m.error_by_trip_length.map((b) => ({ label: b.band === "60+" ? "60+ min" : b.band + " min", value: b.mae_minutes,
+      note: `${fmt.format(b.trips)} trips · RMSLE ${b.rmsle.toFixed(3)}` })), { valueFmt: (v) => v.toFixed(1) + " min", labelW: 120 });
+    vbars(fresh("err-hour"), m.error_by_pickup_hour.map((h) => ({ label: `${String(h.hour).padStart(2, "0")}:00`, short: String(h.hour), value: h.mae_minutes,
+      note: `min MAE · ${fmt.format(h.trips)} trips` })), { color: css("--s2"), valueFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(1) });
+    const fi = m.feature_importance_gain.slice(0, 10);
+    document.getElementById("fi-sub").textContent =
+      `Share of LightGBM split gain, top 10 of ${m.features}. Distance along Manhattan's 29°-tilted street grid carries ${(fi[0].gain_share * 100).toFixed(1)}% on its own.`;
+    hbars(fresh("fi"), fi.map((f) => ({ label: FEATURE_NAMES[f.feature] || f.feature, value: f.gain_share * 100, note: f.feature })),
+      { valueFmt: (v) => v.toFixed(1) + "%", labelW: 290 });
+  },
+
+  quality() {
+    const o = D.overview;
+    if (!o) return;
+    const c = o.cleaning;
+    document.getElementById("dq-sub").textContent =
+      `${fmt.format(c.rows_in)} raw trips → ${fmt.format(c.rows_kept)} kept, ${fmt.format(c.rows_removed)} removed by six rules. Every row is accounted for.`;
+    const t = fresh("dq-tiles");
+    tile(t, "db", "Raw trips", fmt.format(c.rows_in), `${o.first_day} to ${o.last_day}`);
+    tile(t, "check", "Kept", fmt.format(c.rows_kept), ((100 * c.rows_kept) / c.rows_in).toFixed(2) + "% of raw trips");
+    tile(t, "quality", "Removed", fmt.format(c.rows_removed), "broke at least one rule");
+    hbars(fresh("dq-rules"), Object.entries(c.removed_by_rule).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: RULES[k] || k, value: v, note: k })),
+      { color: css("--critical"), labelW: 190 });
+    hbars(fresh("dq-pax"), Object.entries(o.passengers).map(([k, v]) => ({ label: k === "1" ? "1 passenger" : `${k} passengers`, value: v, note: "trips" })),
+      { valueFmt: compact.format, labelW: 130 });
+  },
+};
+
+// ---- predictor
+const PLACES = [
+  ["Times Square", 40.7580, -73.9855], ["Grand Central", 40.7527, -73.9772], ["Penn Station", 40.7506, -73.9935],
+  ["Wall Street", 40.7060, -74.0088], ["The Met (Central Park)", 40.7794, -73.9632], ["Upper West Side", 40.7870, -73.9754],
+  ["Columbia University", 40.8075, -73.9626], ["Williamsburg", 40.7081, -73.9571], ["Downtown Brooklyn", 40.6928, -73.9903],
+  ["Long Island City", 40.7447, -73.9485], ["LaGuardia Airport", 40.7731, -73.8712], ["JFK Airport", 40.6441, -73.7822],
+];
+const trip = { from: [40.7580, -73.9855], to: [40.6441, -73.7822], next: "from" };
+let model = null, shownMinutes = 0;
+
+function placeOptions(sel, which) {
+  sel.replaceChildren();
+  const custom = document.createElement("option"); custom.value = "custom"; custom.textContent = "Point on the map"; sel.appendChild(custom);
+  PLACES.forEach(([name, lat, lon], i) => { const o = document.createElement("option"); o.value = i; o.textContent = name; sel.appendChild(o); });
+  const i = PLACES.findIndex(([, lat, lon]) => lat === trip[which][0] && lon === trip[which][1]);
+  sel.value = i >= 0 ? String(i) : "custom";
+}
+
+function predictPage() {
+  const wrap = fresh("pick-map"), grid = D.grid;
+  if (!grid) return;
+  const canvas = document.createElement("canvas"); canvas.className = "fade-in"; wrap.appendChild(canvas);
+  drawDensity(canvas, grid, "pickups", { dim: true });
+  const svg = el("svg", { class: "overlay", viewBox: `0 0 ${grid.width} ${grid.height}`, "aria-hidden": "true" }, wrap);
+  const line = el("line", { class: "route", "vector-effect": "non-scaling-stroke" }, svg);
+  const dots = { from: el("circle", { r: 3.5, class: "dot-a", stroke: "#fff", "stroke-width": 1.2 }, svg), to: el("circle", { r: 3.5, class: "dot-b", stroke: "#fff", "stroke-width": 1.2 }, svg) };
+  const labels = { from: txt(svg, 0, 0, "A", { class: "val", "font-size": 7, "font-weight": 600 }), to: txt(svg, 0, 0, "B", { class: "val", "font-size": 7, "font-weight": 600 }) };
+  const hint = document.getElementById("pick-hint");
+
+  function drawPoints() {
+    for (const k of ["from", "to"]) {
+      const [gx, gy] = latLonToGrid(grid, ...trip[k]);
+      dots[k].setAttribute("cx", gx); dots[k].setAttribute("cy", gy);
+      labels[k].setAttribute("x", gx + 6); labels[k].setAttribute("y", gy - 5);
+    }
+    const [ax, ay] = latLonToGrid(grid, ...trip.from), [bx, by] = latLonToGrid(grid, ...trip.to);
+    Object.entries({ x1: ax, y1: ay, x2: bx, y2: by }).forEach(([k, v]) => line.setAttribute(k, v));
+    hint.replaceChildren();
+    const b = document.createElement("b"); b.textContent = trip.next === "from" ? "Click the map to set the pickup (A)" : "Click the map to set the drop-off (B)";
+    hint.appendChild(b);
+    const swap = document.createElement("button"); swap.type = "button"; swap.className = "chip-btn"; swap.textContent = "Swap A ↔ B";
+    swap.addEventListener("click", () => { [trip.from, trip.to] = [trip.to, trip.from]; sync(); });
+    hint.appendChild(swap);
+  }
+  canvas.addEventListener("click", (e) => {
+    const r = canvas.getBoundingClientRect();
+    trip[trip.next] = gridToLatLon(grid, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    trip.next = trip.next === "from" ? "to" : "from";
+    sync();
+  });
+
+  const from = document.getElementById("f-from"), to = document.getElementById("f-to"), pax = document.getElementById("f-pax");
+  if (!pax.options.length) for (let i = 1; i <= 6; i++) { const o = document.createElement("option"); o.value = i; o.textContent = i; pax.appendChild(o); }
+  for (const [sel, which] of [[from, "from"], [to, "to"]]) {
+    sel.onchange = () => { if (sel.value !== "custom") { const p = PLACES[+sel.value]; trip[which] = [p[1], p[2]]; } sync(); };
+  }
+  for (const id of ["f-date", "f-time", "f-pax", "f-vendor"]) document.getElementById(id).oninput = () => estimate();
+
+  function sync() { placeOptions(from, "from"); placeOptions(to, "to"); drawPoints(); estimate(); }
+  sync();
+  if (!model) load("model/model.json").then((m) => { model = m; estimate(true); });
+}
+
+function estimate(first = false) {
+  const out = document.getElementById("result");
+  if (!model) return;
+  const date = document.getElementById("f-date").value || "2016-06-15", time = document.getElementById("f-time").value || "17:30";
+  const t = { pickup_datetime: `${date} ${time}:00`, pickup_latitude: trip.from[0], pickup_longitude: trip.from[1],
+    dropoff_latitude: trip.to[0], dropoff_longitude: trip.to[1],
+    passenger_count: +document.getElementById("f-pax").value || 1, vendor_id: +document.getElementById("f-vendor").value };
+  const minutes = TripModel.predictMinutes(model, t);
+  const km = TripModel.haversineKm(model, trip.from[0], trip.from[1], trip.to[0], trip.to[1]);
+  const [pc, dc] = TripModel.clusters(model, t), S = D.similar, hour = +time.slice(0, 2);
+  const band = S ? S.hour_bands.findIndex((h, i) => hour >= h && hour < S.hour_bands[i + 1]) : -1;
+  const k = (pc * model.params.n_clusters + dc) * (S ? S.band_names.length : 1) + band;
+  const simMed = S ? S.median_minutes[k] : -1, simN = S ? S.trips[k] : 0;
+  const bands = D.metrics ? D.metrics.error_by_trip_length : [];
+  const edges = [5, 10, 20, 40, 60, Infinity], bi = edges.findIndex((e) => minutes < e), err = bands[bi];
+  const [hh, mm] = time.split(":").map(Number), arrive = new Date(Date.UTC(2016, 0, 1, hh, mm) + minutes * 60000);
+
+  if (!out.querySelector(".eta")) {
+    out.replaceChildren();
+    const eta = div("eta", out); eta.append(document.createTextNode("0"));
+    const sm = document.createElement("small"); sm.textContent = "min"; eta.appendChild(sm);
+    div("arrive", out); div("facts", out);
+    const n = document.createElement("p"); n.className = "note"; out.appendChild(n);
+  }
+  const eta = out.querySelector(".eta").firstChild;
+  const from0 = shownMinutes, t0 = performance.now(), dur = first && !reduced() ? 1400 : reduced() ? 0 : 500;
+  shownMinutes = minutes;
+  (function frame(now) {
+    const p = dur ? Math.min((now - t0) / dur, 1) : 1, e = 1 - Math.pow(1 - p, 3);
+    eta.nodeValue = (from0 + (minutes - from0) * e).toFixed(1);
+    if (p < 1) requestAnimationFrame(frame);
+  })(t0);
+  out.querySelector(".arrive").textContent =
+    `Predicted door-to-door time. Leaving ${time}, arriving about ${arrive.toISOString().slice(11, 16)}.`;
+  const facts = out.querySelector(".facts"); facts.replaceChildren();
+  const fact = (v, l) => { const f = div("fact", facts); const b = document.createElement("b"); b.textContent = v; f.appendChild(b); const s = document.createElement("span"); s.textContent = l; f.appendChild(s); };
+  fact(km.toFixed(1) + " km", "straight-line distance");
+  fact(simN >= 5 ? simMed.toFixed(1) + " min" : "–", simN >= 5 ? `median of ${fmt.format(simN)} similar past trips` : "too few similar past trips");
+  fact(err ? "± " + err.mae_minutes.toFixed(1) + " min" : "–", err ? "typical error for trips this long (June)" : "");
+  fact((km / (minutes / 60)).toFixed(1) + " km/h", "implied straight-line speed");
+  out.querySelector(".note").textContent = "Similar = same pickup and drop-off area and time of day, Jan–Jun 2016. No live traffic, weather or route: the model knows only the two points and the time.";
+}
+
+// ---- routing: a page is rebuilt whenever it is shown (charts need a laid-out width), so its entrance replays
+function current() { const h = location.hash.slice(1); return PAGES[h] ? h : "overview"; }
+function show(animate = true) {
+  const page = current();
+  document.documentElement.classList.toggle("no-anim", !animate);
+  for (const s of document.querySelectorAll(".page")) s.hidden = s.id !== page;
+  for (const a of document.querySelectorAll(".rail a, .dock a")) {
+    if (a.getAttribute("href") === "#" + page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  }
+  PAGES[page]();
+  if (!animate) return;
+  const section = document.getElementById(page);
+  section.querySelectorAll(".page-head, .tile, .card").forEach((n, i) => {
+    n.classList.remove("enter"); void n.offsetWidth; n.style.setProperty("--i", i); n.classList.add("enter");
+  });
+  countUp(section.querySelectorAll(".tile .v, svg text.val, svg text.big, .donut b, .donut em"));
+}
+function rerender() { show(false); }
+
+const themeBtn = document.getElementById("theme");
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+function syncThemeButton() {
+  themeBtn.querySelector("use").setAttribute("href", isDark() ? "#i-sun" : "#i-moon");
+  themeBtn.setAttribute("aria-label", isDark() ? "Switch to light theme" : "Switch to dark theme");
+}
+themeBtn.addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch (e) {}
+  syncThemeButton(); rerender();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { syncThemeButton(); rerender(); });
+syncThemeButton();
+
+let lastW = innerWidth, rt;
+addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; rerender(); } }, 200); });
+addEventListener("hashchange", () => { show(); scrollTo({ top: 0 }); });
+
+(async function () {
+  const names = { overview: "data/overview.json", metrics: "data/metrics.json", daily: "data/daily.json", hist: "data/duration_hist.json",
+    hw: "data/hour_weekday.json", grid: "data/grid.json", similar: "data/similar.json" };
+  const vals = await Promise.all(Object.values(names).map(load));
+  Object.keys(names).forEach((k, i) => (D[k] = vals[i]));
+  const info = document.querySelector("#pill-info span:last-child");
+  info.textContent = D.overview ? `${compact.format(D.overview.rows_raw)} trips · Jan–Jun 2016 · model in browser` : "Data not found";
+  show();
+})();
+</script>
+</body>
+</html>

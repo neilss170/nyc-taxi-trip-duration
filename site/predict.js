@@ -70,5 +70,9 @@
 
   function predictMinutes(model, trip) { return Math.expm1(predictLog(model, features(model, trip))) / 60; }
 
-  return { features, predictLog, predictMinutes, haversineKm: (model, a, b, c, d) => haversineKm(model.params, a, b, c, d) };
+  // pickup and dropoff location clusters, for looking up similar past trips
+  const clusters = (model, trip) => [cluster(model.params, trip.pickup_latitude, trip.pickup_longitude),
+    cluster(model.params, trip.dropoff_latitude, trip.dropoff_longitude)];
+
+  return { features, predictLog, predictMinutes, clusters, haversineKm: (model, a, b, c, d) => haversineKm(model.params, a, b, c, d) };
 });

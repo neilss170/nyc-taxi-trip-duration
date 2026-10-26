@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from tripdur import config, data
-from tripdur.features import N_CLUSTERS, FeatureBuilder, haversine_km, project
+from tripdur.features import KM_PER_DEG_LAT, KM_PER_DEG_LON, LAT0, LON0, N_CLUSTERS, FeatureBuilder, haversine_km, project
 
 # map window: Manhattan, Brooklyn, Queens and both NYC airports; cells of 150 m
 MAP = {"lat_min": 40.60, "lat_max": 40.88, "lon_min": -74.05, "lon_max": -73.74, "cell_km": 0.15}
@@ -71,7 +71,8 @@ def run() -> dict:
     drop, _, _ = density(df.dropoff_latitude, df.dropoff_longitude)
     speed_sum = np.bincount(pick_cell[pick_ok], weights=np.asarray(kmh)[pick_ok], minlength=w * h)
     speed = np.where(pick >= 20, speed_sum / np.maximum(pick, 1), -1)
-    _write("grid", {**MAP, "width": w, "height": h, "x0": x0, "y0": y0,
+    _write("grid", {**MAP, "width": w, "height": h, "x0": x0, "y0": y0, "lat0": LAT0, "lon0": LON0,
+                    "km_per_deg_lat": KM_PER_DEG_LAT, "km_per_deg_lon": KM_PER_DEG_LON,
                     "pickups": pick.tolist(), "dropoffs": drop.tolist(), "pickup_kmh": np.round(speed, 1).tolist()})
 
     # "similar past trips" for the predictor: same pickup cluster, dropoff cluster and time-of-day band
@@ -88,5 +89,9 @@ def run() -> dict:
     _write("similar", {"hour_bands": HOUR_BANDS, "band_names": BAND_NAMES, "median_minutes": med.tolist(), "trips": cnt.tolist()})
 
     metrics = json.loads((config.REPORTS / "pipeline_metrics.json").read_text())
+    notebook = config.REPORTS / "model_metrics.json"
+    if notebook.exists():
+        nb = json.loads(notebook.read_text())
+        metrics["notebook_best"] = {**nb["models"][0], "split": nb["split"]}
     _write("metrics", metrics)
     return {"grid": [w, h], "files": sorted(p.name for p in (config.SITE / "data").glob("*.json"))}
