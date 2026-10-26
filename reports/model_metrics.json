@@ -1,0 +1,131 @@
+{
+  "target": "log1p(trip_duration_seconds)",
+  "split": "random 80/20, random_state=42 (from feature_engineering.ipynb)",
+  "train_rows": 583431,
+  "test_rows": 145858,
+  "features": 29,
+  "best_model": "HistGradientBoosting",
+  "models": [
+    {
+      "model": "HistGradientBoosting",
+      "rmsle": 0.39,
+      "r2_log": 0.757,
+      "mae_minutes": 4.832,
+      "median_abs_error_minutes": 1.8007,
+      "fit_seconds": 14.7
+    },
+    {
+      "model": "Random Forest",
+      "rmsle": 0.4021,
+      "r2_log": 0.7417,
+      "mae_minutes": 4.9943,
+      "median_abs_error_minutes": 1.9136,
+      "fit_seconds": 91.7
+    },
+    {
+      "model": "Ridge (alpha=1.0)",
+      "rmsle": 0.5279,
+      "r2_log": 0.5548,
+      "mae_minutes": 6.491,
+      "median_abs_error_minutes": 2.8354,
+      "fit_seconds": 0.4
+    },
+    {
+      "model": "Linear Regression",
+      "rmsle": 0.5279,
+      "r2_log": 0.5548,
+      "mae_minutes": 6.491,
+      "median_abs_error_minutes": 2.8354,
+      "fit_seconds": 0.8
+    },
+    {
+      "model": "Baseline (training mean)",
+      "rmsle": 0.7912,
+      "r2_log": -0.0,
+      "mae_minutes": 9.319,
+      "median_abs_error_minutes": 5.0699,
+      "fit_seconds": 0.0
+    }
+  ],
+  "best_rmsle_reduction_vs_baseline_pct": 50.7,
+  "error_by_trip_length": [
+    {
+      "band": "<5 min",
+      "trips": 22151,
+      "mae_minutes": 1.255,
+      "rmsle": 0.498
+    },
+    {
+      "band": "5-10",
+      "trips": 43164,
+      "mae_minutes": 1.679,
+      "rmsle": 0.284
+    },
+    {
+      "band": "10-20",
+      "trips": 51077,
+      "mae_minutes": 2.697,
+      "rmsle": 0.293
+    },
+    {
+      "band": "20-40",
+      "trips": 24616,
+      "mae_minutes": 5.128,
+      "rmsle": 0.347
+    },
+    {
+      "band": "40-60",
+      "trips": 3640,
+      "mae_minutes": 10.029,
+      "rmsle": 0.436
+    },
+    {
+      "band": "60+ min",
+      "trips": 1210,
+      "mae_minutes": 251.253,
+      "rmsle": 2.065
+    }
+  ],
+  "top_features": [
+    {
+      "feature": "trip_distance_km",
+      "rmsle_increase": 0.5507
+    },
+    {
+      "feature": "direction_angle",
+      "rmsle_increase": 0.0763
+    },
+    {
+      "feature": "pickup_hour",
+      "rmsle_increase": 0.0451
+    },
+    {
+      "feature": "dropoff_latitude",
+      "rmsle_increase": 0.0226
+    },
+    {
+      "feature": "lat_diff",
+      "rmsle_increase": 0.0225
+    },
+    {
+      "feature": "manhattan_distance_km",
+      "rmsle_increase": 0.0174
+    },
+    {
+      "feature": "avg_duration_by_dayofweek",
+      "rmsle_increase": 0.0158
+    },
+    {
+      "feature": "is_office_hour",
+      "rmsle_increase": 0.015
+    },
+    {
+      "feature": "distance_weekend_interaction",
+      "rmsle_increase": 0.0138
+    },
+    {
+      "feature": "pickup_latitude",
+      "rmsle_increase": 0.0125
+    }
+  ]
+}
