@@ -4,15 +4,15 @@ How long will a New York yellow-cab ride take? This project cleans 729,322 trips
 trains a LightGBM model that is tested on a month it never saw, and ships that exact model to a dashboard where
 it runs in the browser.
 
-**Live dashboard:** https://neilss170.github.io/nyc-taxi-trip-duration/ (overview, a trip map drawn from the
-pickups alone, an in-browser trip predictor, model results and data quality; plain HTML, SVG and Canvas)
+**Live dashboard:** https://neilss170.github.io/nyc-taxi-trip-duration/ (overview, a street map of the trips,
+an in-browser trip predictor, model results and data quality; plain HTML, SVG, Canvas and Leaflet)
 
 ![Predict a trip: Times Square to JFK on a weekday at 17:30, 66.7 minutes predicted next to the median of 97 similar past trips](docs/screenshots/predict-light.webp)
 
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/overview-light.webp" alt="Overview: KPI tiles, trips per day with the January 2016 blizzard, trip lengths, traffic speed by hour and weekday"><br><sub>Overview: daily trips, trip lengths, traffic speed by hour</sub></td>
-    <td width="50%"><img src="docs/screenshots/map-dark.webp" alt="Density map of pickups in a 75 m grid, dark theme"><br><sub>Trip map: 721K pickups, no basemap</sub></td>
+    <td width="50%"><img src="docs/screenshots/map-dark.webp" alt="Street map with 8,000 trips coloured by duration, dark theme"><br><sub>Trip map: trips on OpenStreetMap, coloured by duration</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/model-light.webp" alt="Model page: test RMSLE by model, error by trip length and hour, feature importance"><br><sub>Model: June test results and what the model relies on</sub></td>

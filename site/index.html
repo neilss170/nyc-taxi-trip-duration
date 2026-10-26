@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script>
   // apply a saved theme before first paint
   try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
@@ -24,6 +25,7 @@
   --band: rgba(208,59,59,0.12);
   /* sequential ramp, validated against the light glass surface */
   --seq-0: #7eaeea; --seq-1: #0d366b; --nodata: rgba(27,25,21,0.13);
+  --dur-0: #e8913e; --dur-1: #6e2504;
   --chip: rgba(237,161,0,0.24); --streets: rgba(27,25,21,0.03);
   --blob-1: rgba(240,170,40,0.55); --blob-2: rgba(214,110,60,0.36); --blob-3: rgba(60,120,200,0.26); --blob-4: rgba(120,84,48,0.30);
 }
@@ -38,6 +40,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --critical: #e66767; --good: #0ca30c;
     --band: rgba(230,103,103,0.16);
     --seq-0: #2a5590; --seq-1: #a6cbf4; --nodata: rgba(255,255,255,0.1);
+    --dur-0: #9a4410; --dur-1: #ffc890;
     --chip: rgba(201,133,0,0.26); --streets: rgba(255,255,255,0.03);
     --blob-1: rgba(200,130,20,0.30); --blob-2: rgba(160,70,30,0.26); --blob-3: rgba(40,80,150,0.26); --blob-4: rgba(90,60,30,0.32);
   }
@@ -52,6 +55,7 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --critical: #e66767; --good: #0ca30c;
   --band: rgba(230,103,103,0.16);
   --seq-0: #2a5590; --seq-1: #a6cbf4; --nodata: rgba(255,255,255,0.1);
+  --dur-0: #9a4410; --dur-1: #ffc890;
   --chip: rgba(201,133,0,0.26); --streets: rgba(255,255,255,0.03);
   --blob-1: rgba(200,130,20,0.30); --blob-2: rgba(160,70,30,0.26); --blob-3: rgba(40,80,150,0.26); --blob-4: rgba(90,60,30,0.32);
 }
@@ -206,9 +210,26 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
 /* density map */
 .map-card { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
 @media (max-width: 820px) { .map-card { grid-template-columns: 1fr; } }
-.map-wrap { position: relative; max-width: 698px; margin: 0 auto; width: 100%; }
-.map-wrap canvas { display: block; width: 100%; height: auto; border-radius: 14px; }
-.map-wrap svg.overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.map-wrap { position: relative; width: 100%; }
+.leaflet-host { height: 580px; border-radius: 14px; overflow: hidden; z-index: 0; background: var(--solid); }
+.pick-map .leaflet-host { height: 620px; }
+@media (max-width: 820px) { .leaflet-host, .pick-map .leaflet-host { height: 440px; } }
+.leaflet-container { font: inherit; }
+.leaflet-container svg { width: auto; height: auto; overflow: hidden; }
+.pick-map .leaflet-container { cursor: crosshair; }
+.leaflet-image-layer.crisp { image-rendering: pixelated; }
+/* calmer street colours so the trip layers stand out; dark mode turns the light tiles into a dark map */
+.leaflet-host .leaflet-tile-pane { filter: saturate(0.7) brightness(1.02); }
+.leaflet-host.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.4); }
+.leaflet-bar a, .leaflet-bar a:hover { background: var(--glass-strong); color: var(--ink); border-color: var(--edge); }
+.leaflet-control-attribution { background: var(--glass-strong) !important; color: var(--ink-2) !important; border-radius: 8px 0 0 0; }
+.leaflet-control-attribution a { color: var(--ink) !important; }
+.leaflet-tooltip.glass-tip { background: var(--glass-strong); border: 1px solid var(--edge); color: var(--ink); border-radius: 10px;
+  box-shadow: 0 8px 24px var(--shadow); font: inherit; font-size: 12px; padding: 5px 9px; }
+.leaflet-tooltip.glass-tip::before { display: none; }
+.leaflet-tooltip.ab-label { background: transparent; border: 0; box-shadow: none; padding: 0 0 0 4px; font: inherit; font-size: 14px;
+  font-weight: 700; color: var(--ink); text-shadow: 0 0 3px var(--solid), 0 0 3px var(--solid), 0 0 3px var(--solid); }
+.leaflet-tooltip.ab-label::before { display: none; }
 .ramp { height: 10px; border-radius: 5px; margin: 6px 0 4px; }
 .ramp-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .map-side h3 { margin-top: 0; }
@@ -216,7 +237,6 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
 /* predictor */
 .predict { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 900px) { .predict { grid-template-columns: 1fr; } }
-.pick-map { cursor: crosshair; touch-action: manipulation; }
 .form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-bottom: 14px; }
 .field { display: grid; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink-2); min-width: 0; }
 .field select, .field input { font: inherit; font-size: 14px; color: var(--ink); background: var(--glass-strong); border: 1px solid var(--edge);
@@ -246,7 +266,6 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
 .sweep { stroke-dasharray: 1; animation: draw 1.3s var(--ease) backwards; animation-delay: 0.15s; }
 .fade-in { animation: fadeIn 0.9s ease backwards; animation-delay: 0.5s; }
 .pop { transform-box: fill-box; transform-origin: center; animation: pop 0.6s var(--ease) backwards; }
-.map-wrap canvas.fade-in { animation-delay: 0.1s; }
 @keyframes growX { from { transform: scaleX(0); } }
 @keyframes growY { from { transform: scaleY(0); } }
 @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
@@ -325,7 +344,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
   <section class="page" id="map" aria-labelledby="h-map" hidden>
     <div class="page-head">
       <div><h1 id="h-map">Where the trips are</h1>
-        <p>Every cleaned trip as a point in a 75 m grid. No basemap is drawn: the streets, bridges and airports appear from the trips alone.</p></div>
+        <p>Real streets underneath, trips on top. The dots are random trips coloured by how long they took; Density and Speed count every cleaned trip in 75 m cells.</p></div>
       <div class="seg glass" id="map-layer" role="group" aria-label="Map layer"></div>
     </div>
     <div class="card glass still map-card" id="map-card"></div>
@@ -388,13 +407,14 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: cen
       </ul></div>
   </section>
 
-  <footer>Data: NYC Taxi &amp; Limousine Commission trip records, January–June 2016 (Kaggle NYC Taxi Trip Duration data). Built with pandas, LightGBM and plain SVG/Canvas.</footer>
+  <footer>Data: NYC Taxi &amp; Limousine Commission trip records, January–June 2016 (Kaggle NYC Taxi Trip Duration data). Built with pandas, LightGBM, plain SVG/Canvas and Leaflet. Map tiles &copy; OpenStreetMap contributors.</footer>
 </main>
 
 <nav class="dock glass" aria-label="Pages">
   <a href="#overview">Overview</a><a href="#map">Map</a><a href="#predict">Predict</a><a href="#model">Model</a><a href="#quality">Quality</a>
 </nav>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="tour.js"></script>
 <script src="predict.js"></script>
 <script>
@@ -626,9 +646,37 @@ function heatmap(card, rows, value, valueLabel) {
   for (const h of W < 400 ? [0, 12, 23] : [0, 6, 12, 18, 23]) txt(svg, l + h * cw + cw / 2, H - 4, String(h).padStart(2, "0"), { "text-anchor": "middle" });
 }
 
-// ---- density map: one 75 m cell per pixel, drawn on a canvas; north is up
-function drawDensity(canvas, grid, layer, { dim = false } = {}) {
-  const w = grid.width, h = grid.height, vals = grid[layer], speed = layer === "pickup_kmh";
+// ---- street map (Leaflet + OpenStreetMap tiles) with the trip layers on top; dark mode inverts the tiles in CSS
+const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const maps = {};
+
+function streetMap(id, host) {
+  if (maps[id]) maps[id].remove();
+  const b = D.grid.nyc_bbox;
+  const m = L.map(host, { preferCanvas: true, zoomSnap: 0.5, minZoom: 10, maxZoom: 17, scrollWheelZoom: false,
+    maxBounds: [[b.lat_min - 0.05, b.lon_min - 0.08], [b.lat_max + 0.05, b.lon_max + 0.08]] });
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTRIB, maxZoom: 19 }).addTo(m);
+  host.classList.toggle("dark-tiles", isDark());
+  m.fitBounds([[40.635, -74.03], [40.85, -73.77]]);
+  // scrolling the page should not zoom the map until it has been clicked
+  m.once("click", () => m.scrollWheelZoom.enable());
+  maps[id] = m;
+  return m;
+}
+
+// the 75 m grid as an image over its exact lat/lon box (the grid is linear in latitude and longitude)
+function gridBounds(g) {
+  const lat = (y) => y / g.km_per_deg_lat + g.lat0, lon = (x) => x / g.km_per_deg_lon + g.lon0;
+  return [[lat(g.y0), lon(g.x0)], [lat(g.y0 + g.height * g.cell_km), lon(g.x0 + g.width * g.cell_km)]];
+}
+function gridCell(g, lat, lng) {
+  const cx = Math.floor(((lng - g.lon0) * g.km_per_deg_lon - g.x0) / g.cell_km);
+  const cy = Math.floor(((lat - g.lat0) * g.km_per_deg_lat - g.y0) / g.cell_km);
+  return cx < 0 || cy < 0 || cx >= g.width || cy >= g.height ? -1 : cy * g.width + cx;
+}
+function gridImage(g, key) {
+  const w = g.width, h = g.height, vals = g[key], speed = key === "pickup_kmh";
   const off = document.createElement("canvas"); off.width = w; off.height = h;
   const img = off.getContext("2d").createImageData(w, h);
   const pos = vals.filter((v) => (speed ? v >= 0 : v > 0)).map((v) => (speed ? v : Math.log10(v))).sort((a, b) => a - b);
@@ -640,64 +688,79 @@ function drawDensity(canvas, grid, layer, { dim = false } = {}) {
     const t = Math.min(Math.max(((speed ? v : Math.log10(v)) - lo) / (hi - lo), 0), 1);
     const o = ((h - 1 - cy) * w + cx) * 4;
     for (let k = 0; k < 3; k++) img.data[o + k] = Math.round(c0[k] + (c1[k] - c0[k]) * t);
-    img.data[o + 3] = Math.round(255 * (dim ? 0.18 + 0.5 * t : speed ? 0.85 : 0.35 + 0.65 * t));
+    img.data[o + 3] = Math.round(255 * (speed ? 0.85 : 0.45 + 0.55 * t));
   }
   off.getContext("2d").putImageData(img, 0, 0);
-  // drawn at twice the grid size without smoothing, so every 75 m cell stays a sharp square
-  const k = 2, ctx = canvas.getContext("2d");
-  canvas.width = w * k; canvas.height = h * k;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(off, 0, 0, w * k, h * k);
-  return { lo, hi };
-}
-function gridToLatLon(grid, fx, fy) {
-  const x = grid.x0 + fx * grid.width * grid.cell_km, y = grid.y0 + (1 - fy) * grid.height * grid.cell_km;
-  return [y / grid.km_per_deg_lat + grid.lat0, x / grid.km_per_deg_lon + grid.lon0];
-}
-function latLonToGrid(grid, lat, lon) {
-  const x = (lon - grid.lon0) * grid.km_per_deg_lon, y = (lat - grid.lat0) * grid.km_per_deg_lat;
-  return [(x - grid.x0) / grid.cell_km, grid.height - (y - grid.y0) / grid.cell_km];
+  return { url: off.toDataURL(), lo, hi };
 }
 
+const DUR_MAX = 45;
+const durColor = (minutes) => mix(css("--dur-0"), css("--dur-1"), Math.min(minutes / DUR_MAX, 1));
+
 const LAYERS = {
-  pickups: { label: "Pickups", note: "Trips starting in each 75 m cell (log scale).", fmt: (v) => compact.format(v), log: true },
-  dropoffs: { label: "Drop-offs", note: "Trips ending in each 75 m cell (log scale).", fmt: (v) => compact.format(v), log: true },
-  pickup_kmh: { label: "Speed", note: "Average straight-line speed of trips starting here (cells with 10+ trips).", fmt: (v) => v.toFixed(1) + " km/h" },
+  pickups: { label: "Pickups", kind: "points", at: 0 },
+  dropoffs: { label: "Drop-offs", kind: "points", at: 2 },
+  density: { label: "Density", kind: "grid", key: "pickups", log: true, fmt: (v) => compact.format(v),
+    note: "Every cleaned trip's pickup, counted in 75 m cells (log scale)." },
+  speed: { label: "Speed", kind: "grid", key: "pickup_kmh", fmt: (v) => v.toFixed(1) + " km/h",
+    note: "Average straight-line speed of the trips starting in each 75 m cell (cells with 10+ trips)." },
 };
 let mapLayer = "pickups";
 
-function densityPage(card, seg, grid) {
-  const wrap = div("map-wrap", card), side = div("map-side", card);
-  const canvas = document.createElement("canvas"); canvas.className = "fade-in"; wrap.appendChild(canvas);
-  canvas.setAttribute("role", "img"); canvas.setAttribute("aria-label", "Density map of taxi trips in New York City");
-  const tip = tooltip(card);
+function mapPage(card, seg) {
+  const g = D.grid, pts = D.points;
+  const wrap = div("map-wrap", card), host = div("leaflet-host fade-in", wrap), side = div("map-side", card);
+  const m = streetMap("main", host), tip = tooltip(card);
+  let overlay = null;
+
   function draw() {
-    const L = LAYERS[mapLayer], { lo, hi } = drawDensity(canvas, grid, mapLayer);
+    if (overlay) overlay.remove();
+    const lay = LAYERS[mapLayer];
     side.replaceChildren();
-    const h = document.createElement("h3"); h.textContent = L.label; side.appendChild(h);
-    const p = document.createElement("p"); p.className = "note"; p.textContent = L.note; side.appendChild(p);
-    const ramp = div("ramp", side); ramp.style.background = `linear-gradient(90deg, ${css("--seq-0")}, ${css("--seq-1")})`;
-    const labels = div("ramp-labels", side);
-    div(null, labels, "≤" + L.fmt(L.log ? 10 ** lo : lo)); div(null, labels, L.fmt(L.log ? 10 ** hi : hi) + "+");
+    const h = document.createElement("h3"); h.textContent = lay.label; side.appendChild(h);
+    const p = document.createElement("p"); p.className = "note"; side.appendChild(p);
+    const ramp = div("ramp", side), labels = div("ramp-labels", side);
+    if (lay.kind === "points") {
+      p.textContent = `${fmt.format(pts.rows.length)} random trips at their ${lay.at === 0 ? "pickup" : "drop-off"} point, coloured by how long the trip took.`;
+      overlay = L.layerGroup();
+      for (const r of pts.rows) {
+        L.circleMarker([r[lay.at], r[lay.at + 1]], { radius: 3.5, weight: 0.8, color: css("--solid"), fillColor: durColor(r[4]), fillOpacity: 0.85 })
+          .bindTooltip(`${r[4].toFixed(1)} min · picked up at ${String(r[5]).padStart(2, "0")}:00`, { className: "glass-tip", direction: "top" })
+          .addTo(overlay);
+      }
+      ramp.style.background = `linear-gradient(90deg, ${css("--dur-0")}, ${css("--dur-1")})`;
+      div(null, labels, "0 min"); div(null, labels, DUR_MAX + "+ min");
+    } else {
+      const im = gridImage(g, lay.key);
+      p.textContent = lay.note;
+      overlay = L.imageOverlay(im.url, gridBounds(g), { className: "crisp" });
+      ramp.style.background = `linear-gradient(90deg, ${css("--seq-0")}, ${css("--seq-1")})`;
+      div(null, labels, "≤" + lay.fmt(lay.log ? 10 ** im.lo : im.lo)); div(null, labels, lay.fmt(lay.log ? 10 ** im.hi : im.hi) + "+");
+    }
+    overlay.addTo(m);
     const n = document.createElement("p"); n.className = "note";
-    n.textContent = "The densest lines are Manhattan's avenues, the bridges and the roads to the airports. Hover for a cell's numbers.";
+    n.textContent = (lay.kind === "points" ? "Hover a dot for its trip." : "Hover the map for a cell's numbers.") + " Click the map, then scroll or use +/− to zoom.";
     side.appendChild(n);
   }
-  canvas.addEventListener("pointermove", (e) => {
-    const r = canvas.getBoundingClientRect(), cx = Math.floor(((e.clientX - r.left) / r.width) * grid.width);
-    const cy = grid.height - 1 - Math.floor(((e.clientY - r.top) / r.height) * grid.height), i = cy * grid.width + cx;
-    if (cx < 0 || cy < 0 || cx >= grid.width || cy >= grid.height) return tip.hide();
-    const [lat, lon] = gridToLatLon(grid, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  // cell numbers for the grid layers
+  m.on("mousemove", (e) => {
+    if (LAYERS[mapLayer].kind !== "grid") return;
+    const i = gridCell(g, e.latlng.lat, e.latlng.lng);
+    if (i < 0 || (!g.pickups[i] && !g.dropoffs[i])) return tip.hide();
     const cr = card.getBoundingClientRect();
-    tip.show(e.clientX - cr.left, e.clientY - cr.top, `${lat.toFixed(4)}, ${lon.toFixed(4)}`, [
-      { value: fmt.format(grid.pickups[i]), name: "pickups" }, { value: fmt.format(grid.dropoffs[i]), name: "drop-offs" },
-      { value: grid.pickup_kmh[i] >= 0 ? grid.pickup_kmh[i].toFixed(1) + " km/h" : "–", name: "avg speed" }]);
+    tip.show(e.originalEvent.clientX - cr.left, e.originalEvent.clientY - cr.top, `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`, [
+      { value: fmt.format(g.pickups[i]), name: "pickups" }, { value: fmt.format(g.dropoffs[i]), name: "drop-offs" },
+      { value: g.pickup_kmh[i] >= 0 ? g.pickup_kmh[i].toFixed(1) + " km/h" : "–", name: "avg speed" }]);
   });
-  canvas.addEventListener("pointerleave", () => tip.hide());
-  for (const [key, L] of Object.entries(LAYERS)) {
-    const b = document.createElement("button"); b.type = "button"; b.textContent = L.label;
+  m.on("mouseout", () => tip.hide());
+  for (const [key, lay] of Object.entries(LAYERS)) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = lay.label;
     b.setAttribute("aria-pressed", String(key === mapLayer));
-    b.addEventListener("click", () => { mapLayer = key; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); draw(); });
+    b.addEventListener("click", () => {
+      mapLayer = key; tip.hide();
+      seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      draw();
+    });
     seg.appendChild(b);
   }
   draw();
@@ -794,7 +857,7 @@ const PAGES = {
   },
 
   map() {
-    if (D.grid) densityPage(fresh("map-card"), fresh("map-layer"), D.grid);
+    if (D.grid && D.points && window.L) mapPage(fresh("map-card"), fresh("map-layer"));
   },
 
   predict() { predictPage(); },
@@ -870,48 +933,50 @@ function placeOptions(sel, which) {
 }
 
 function predictPage() {
-  const wrap = fresh("pick-map"), grid = D.grid;
-  if (!grid) return;
-  const canvas = document.createElement("canvas"); canvas.className = "fade-in"; wrap.appendChild(canvas);
-  drawDensity(canvas, grid, "pickups", { dim: true });
-  const svg = el("svg", { class: "overlay", viewBox: `0 0 ${grid.width} ${grid.height}`, "aria-hidden": "true" }, wrap);
-  const line = el("line", { class: "route", "vector-effect": "non-scaling-stroke" }, svg);
-  const dots = { from: el("circle", { r: 3.5, class: "dot-a", stroke: "#fff", "stroke-width": 1.2 }, svg), to: el("circle", { r: 3.5, class: "dot-b", stroke: "#fff", "stroke-width": 1.2 }, svg) };
-  const labels = { from: txt(svg, 0, 0, "A", { class: "val", "font-size": 7, "font-weight": 600 }), to: txt(svg, 0, 0, "B", { class: "val", "font-size": 7, "font-weight": 600 }) };
+  const wrap = fresh("pick-map");
+  if (!D.grid || !window.L) return;
+  const host = div("leaflet-host fade-in", wrap), m = streetMap("pick", host), b = D.grid.nyc_bbox;
+  const route = L.polyline([trip.from, trip.to], { color: css("--ink"), weight: 2, dashArray: "6 6", opacity: 0.75 }).addTo(m);
+  const marker = (k, color, label) => L.circleMarker(trip[k], { radius: 8, color: "#fff", weight: 2.5, fillColor: color, fillOpacity: 1 })
+    .bindTooltip(label, { permanent: true, direction: "right", className: "ab-label", offset: [6, 0] }).addTo(m);
+  const dots = { from: marker("from", css("--s3"), "A"), to: marker("to", css("--s2"), "B") };
   const hint = document.getElementById("pick-hint");
+  const inside = (lat, lon) => lat >= b.lat_min && lat <= b.lat_max && lon >= b.lon_min && lon <= b.lon_max;
 
-  function drawPoints() {
-    for (const k of ["from", "to"]) {
-      const [gx, gy] = latLonToGrid(grid, ...trip[k]);
-      dots[k].setAttribute("cx", gx); dots[k].setAttribute("cy", gy);
-      labels[k].setAttribute("x", gx + 6); labels[k].setAttribute("y", gy - 5);
-    }
-    const [ax, ay] = latLonToGrid(grid, ...trip.from), [bx, by] = latLonToGrid(grid, ...trip.to);
-    Object.entries({ x1: ax, y1: ay, x2: bx, y2: by }).forEach(([k, v]) => line.setAttribute(k, v));
+  function drawPoints(refit) {
+    dots.from.setLatLng(trip.from); dots.to.setLatLng(trip.to); route.setLatLngs([trip.from, trip.to]);
+    if (refit) m.fitBounds(L.latLngBounds([trip.from, trip.to]).pad(0.35), { maxZoom: 14 });
     hint.replaceChildren();
-    const b = document.createElement("b"); b.textContent = trip.next === "from" ? "Click the map to set the pickup (A)" : "Click the map to set the drop-off (B)";
-    hint.appendChild(b);
-    const swap = document.createElement("button"); swap.type = "button"; swap.className = "chip-btn"; swap.textContent = "Swap A ↔ B";
-    swap.addEventListener("click", () => { [trip.from, trip.to] = [trip.to, trip.from]; sync(); });
-    hint.appendChild(swap);
+    const t = document.createElement("b");
+    t.textContent = trip.next === "from" ? "Click the map to set the pickup (A)" : "Click the map to set the drop-off (B)";
+    hint.appendChild(t);
+    const swapBtn = document.createElement("button"); swapBtn.type = "button"; swapBtn.className = "chip-btn"; swapBtn.textContent = "Swap A ↔ B";
+    swapBtn.addEventListener("click", () => { [trip.from, trip.to] = [trip.to, trip.from]; sync(false); });
+    hint.appendChild(swapBtn);
   }
-  canvas.addEventListener("click", (e) => {
-    const r = canvas.getBoundingClientRect();
-    trip[trip.next] = gridToLatLon(grid, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  m.on("click", (e) => {
+    const { lat, lng } = e.latlng;
+    if (!inside(lat, lng)) {
+      hint.replaceChildren();
+      const t = document.createElement("b"); t.textContent = "That point is outside New York City, where the model has no trips. Pick a point inside.";
+      hint.appendChild(t);
+      return;
+    }
+    trip[trip.next] = [lat, lng];
     trip.next = trip.next === "from" ? "to" : "from";
-    sync();
+    sync(false);
   });
 
   const from = document.getElementById("f-from"), to = document.getElementById("f-to"), pax = document.getElementById("f-pax");
   if (!pax.options.length) for (let i = 1; i <= 6; i++) { const o = document.createElement("option"); o.value = i; o.textContent = i; pax.appendChild(o); }
   for (const [sel, which] of [[from, "from"], [to, "to"]]) {
-    sel.onchange = () => { if (sel.value !== "custom") { const p = PLACES[+sel.value]; trip[which] = [p[1], p[2]]; } sync(); };
+    sel.onchange = () => { if (sel.value !== "custom") { const p = PLACES[+sel.value]; trip[which] = [p[1], p[2]]; } sync(true); };
   }
   for (const id of ["f-date", "f-time", "f-pax", "f-vendor"]) document.getElementById(id).oninput = () => estimate();
 
-  function sync() { placeOptions(from, "from"); placeOptions(to, "to"); drawPoints(); estimate(); }
-  sync();
-  if (!model) load("model/model.json").then((m) => { model = m; estimate(true); });
+  function sync(refit) { placeOptions(from, "from"); placeOptions(to, "to"); drawPoints(refit); estimate(); }
+  sync(true);
+  if (!model) load("model/model.json").then((mdl) => { model = mdl; estimate(true); });
 }
 
 function estimate(first = false) {
@@ -997,7 +1062,7 @@ addEventListener("hashchange", () => { show(); scrollTo({ top: 0 }); });
 
 (async function () {
   const names = { overview: "data/overview.json", metrics: "data/metrics.json", daily: "data/daily.json", hist: "data/duration_hist.json",
-    hw: "data/hour_weekday.json", grid: "data/grid.json", similar: "data/similar.json" };
+    hw: "data/hour_weekday.json", grid: "data/grid.json", similar: "data/similar.json", points: "data/trip_points.json" };
   const vals = await Promise.all(Object.values(names).map(load));
   Object.keys(names).forEach((k, i) => (D[k] = vals[i]));
   if (D.grid) {
@@ -1041,14 +1106,14 @@ const TOUR = [
     "page": "map",
     "target": "#map-card .map-wrap",
     "exact": true,
-    "title": "A map drawn by the trips",
-    "text": "There is no basemap here. Every dot is a 75 m square where trips started, so Manhattan's avenues, the bridges and the airport roads appear on their own."
+    "title": "Trips on real streets",
+    "text": "Each dot is a real trip, coloured by how long it took: the longer the trip, the darker the dot. Hover a dot for its duration; click the map, then scroll to zoom."
   },
   {
     "page": "map",
     "target": "#map-layer",
     "title": "Switch the layer",
-    "text": "Show where trips start, where they end, or how fast the trips leaving each spot were."
+    "text": "Show trips at their pickup or drop-off point, or switch to Density and Speed, which count every cleaned trip in 75 m squares."
   },
   {
     "page": "predict",
