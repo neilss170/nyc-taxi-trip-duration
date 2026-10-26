@@ -611,7 +611,7 @@ def clean_plot(fig, height=400):
 
 def show_chart(fig, height=400):
     fig = clean_plot(fig, height=height)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def styled_table(dataframe):
@@ -1060,7 +1060,7 @@ with tab4:
     col1, col2 = st.columns(2)
 
     with col1:
-        fig = px.scatter_mapbox(
+        fig = px.scatter_map(
             filtered_map_df,
             lat="pickup_latitude",
             lon="pickup_longitude",
@@ -1071,11 +1071,11 @@ with tab4:
             color_continuous_scale="Viridis",
         )
 
-        fig.update_layout(mapbox_style="open-street-map")
+        fig.update_layout(map_style="open-street-map")
         show_chart(fig, height=520)
 
     with col2:
-        fig = px.scatter_mapbox(
+        fig = px.scatter_map(
             filtered_map_df,
             lat="dropoff_latitude",
             lon="dropoff_longitude",
@@ -1086,7 +1086,7 @@ with tab4:
             color_continuous_scale="Plasma",
         )
 
-        fig.update_layout(mapbox_style="open-street-map")
+        fig.update_layout(map_style="open-street-map")
         show_chart(fig, height=520)
 
 # ============================================================
@@ -1158,7 +1158,7 @@ with tab5:
         }
     )
 
-    st.dataframe(styled_table(feature_table), use_container_width=True, height=300)
+    st.dataframe(styled_table(feature_table), width="stretch", height=300)
 
     feature_preview = filtered_df.copy()
 
@@ -1218,7 +1218,7 @@ with tab5:
 
     st.dataframe(
         styled_table(feature_preview[preview_cols].head(50)),
-        use_container_width=True,
+        width="stretch",
         height=360,
     )
 
@@ -1424,7 +1424,7 @@ with tab6:
                 .head(12)
                 .round({"Correlation": 3})
             ),
-            use_container_width=True,
+            width="stretch",
             height=460,
         )
 
@@ -1542,14 +1542,14 @@ with tab6:
     with col5:
         st.dataframe(
             styled_table(distance_impact.round(2)),
-            use_container_width=True,
+            width="stretch",
             height=260,
         )
 
     with col6:
         st.dataframe(
             styled_table(airport_impact.round(2)),
-            use_container_width=True,
+            width="stretch",
             height=260,
         )
 
@@ -1594,7 +1594,7 @@ with tab6:
 
     st.dataframe(
         styled_table(readiness_checklist),
-        use_container_width=True,
+        width="stretch",
         height=420,
     )
 
@@ -1616,7 +1616,7 @@ with tab7:
     missing_values = int(filtered_df.isnull().sum().sum())
     duplicate_rows = int(filtered_df.duplicated().sum())
     numeric_cols = filtered_df.select_dtypes(include=np.number).columns.tolist()
-    categorical_cols = filtered_df.select_dtypes(include="object").columns.tolist()
+    categorical_cols = filtered_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
     q1, q2, q3, q4 = st.columns(4)
 
@@ -1640,14 +1640,14 @@ with tab7:
 
         st.dataframe(
             styled_table(missing_summary),
-            use_container_width=True,
+            width="stretch",
             height=330,
         )
 
     with col2:
         st.dataframe(
-            styled_table(filtered_df.describe().T.round(2)),
-            use_container_width=True,
+            styled_table(filtered_df.describe(include="number").T.round(2)),
+            width="stretch",
             height=330,
         )
 
@@ -1744,7 +1744,7 @@ with tab7:
 
     st.dataframe(
         styled_table(leakage_info),
-        use_container_width=True,
+        width="stretch",
         height=330,
     )
 
@@ -1814,6 +1814,6 @@ with tab8:
 
     st.dataframe(
         styled_table(filtered_df.head(500)),
-        use_container_width=True,
+        width="stretch",
         height=380,
     )
